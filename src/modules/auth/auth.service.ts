@@ -1,14 +1,14 @@
+import { Role } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { prisma } from '../../prisma/client';
+import { ConflictError, UnauthorizedError } from '../../utils/errors';
 import {
   generateAccessToken,
   generateRefreshToken,
-  verifyRefreshToken,
   getRefreshTokenExpiry,
+  verifyRefreshToken,
 } from '../../utils/jwt';
-import { ConflictError, NotFoundError, UnauthorizedError } from '../../utils/errors';
-import { RegisterDto, LoginDto } from './auth.schema';
-import { Role } from '@prisma/client';
+import { LoginDto, RegisterDto } from './auth.schema';
 
 const SALT_ROUNDS = 12;
 
@@ -77,6 +77,7 @@ export class AuthService {
       },
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password: _password, ...userWithoutPassword } = user;
 
     return { user: userWithoutPassword, accessToken, refreshToken };

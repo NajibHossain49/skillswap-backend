@@ -2,7 +2,7 @@ import { vi } from 'vitest';
 
 // Mock environment variables for tests
 process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/skillswap_test';
+process.env.DATABASE_URL = 'postgresql://postgres:123456@localhost:5432/skillswap?schema=public';
 process.env.JWT_ACCESS_SECRET = 'test_access_secret_minimum_32_chars_long_xyz';
 process.env.JWT_REFRESH_SECRET = 'test_refresh_secret_minimum_32_chars_long_xyz';
 process.env.JWT_ACCESS_EXPIRES_IN = '15m';

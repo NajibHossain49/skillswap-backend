@@ -1,7 +1,7 @@
-import { prisma } from '../../prisma/client';
-import { NotFoundError, ForbiddenError } from '../../utils/errors';
-import { UpdateProfileDto, UpdateUserRoleDto, UserQueryDto } from './user.schema';
 import { Role } from '@prisma/client';
+import { prisma } from '../../prisma/client';
+import { NotFoundError } from '../../utils/errors';
+import { UpdateProfileDto, UpdateUserRoleDto, UserQueryDto } from './user.schema';
 
 const USER_SELECT = {
   id: true,
@@ -50,7 +50,13 @@ export class UserService {
     };
 
     const [users, total] = await Promise.all([
-      prisma.user.findMany({ where, select: USER_SELECT, skip, take: limit, orderBy: { createdAt: 'desc' } }),
+      prisma.user.findMany({
+        where,
+        select: USER_SELECT,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
       prisma.user.count({ where }),
     ]);
 
