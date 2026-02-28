@@ -160,9 +160,9 @@ npm run db:seed
 **Seeded accounts:**
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@skillswap.com | Admin@123 |
-| Mentor | mentor@skillswap.com | Mentor@123 |
-| Learner | learner@skillswap.com | Learner@123 |
+| Admin | admin@skillswap.com | Adm!n-SkillSwap-2026 |
+| Mentor | michael.kovacs@skillswap.com | Mentor2026!! |
+| Learner | alex.k@skillswap.com | Learner2026!! |
 
 ### 6. Start development server
 
