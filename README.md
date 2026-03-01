@@ -4,6 +4,13 @@ A modular, production-ready backend system for a peer-to-peer skill exchange pla
 
 ---
 
+🔗 **Frontend Repository:**
+SkillSwap Frontend (Next.js + TypeScript + Tailwind CSS + eg,..)
+👉 [https://github.com/NajibHossain49/skillswap-frontend.git](https://github.com/NajibHossain49/skillswap-frontend.git)
+
+⚠️ The backend must be running on `http://localhost:3001` for the frontend to function correctly.
+
+
 ## Table of Contents
 
 - [Features](#features)
