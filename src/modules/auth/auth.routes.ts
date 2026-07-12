@@ -1,9 +1,17 @@
 import { Router } from 'express';
 import { authController } from './auth.controller';
 import { validate } from '../../middleware/validate';
-import { registerSchema, loginSchema, refreshTokenSchema } from './auth.schema';
-import { authenticate } from '../../middleware/auth';
-import { authLimiter } from '../../middleware/rateLimiter';
+import {
+  registerSchema,
+  loginSchema,
+  refreshTokenSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+} from './auth.schema';
+import { authenticate, strictAuth } from '../../middleware/auth';
+import { authLimiter, passwordResetLimiter } from '../../middleware/rateLimiter';
 
 const router = Router();
 
@@ -58,5 +66,78 @@ router.post('/logout-all', authenticate, authController.logoutAll.bind(authContr
  * @access  Private
  */
 router.get('/me', authenticate, authController.me.bind(authController));
+
+/**
+ * @route   POST /api/auth/change-password
+ * @desc    Change password, revoke all sessions, and return a fresh token pair
+ * @access  Private
+ */
+router.post(
+  '/change-password',
+  strictAuth,
+  validate(changePasswordSchema),
+  authController.changePassword.bind(authController),
+);
+
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Request a password reset link (always responds generically)
+ * @access  Public
+ */
+router.post(
+  '/forgot-password',
+  passwordResetLimiter,
+  validate(forgotPasswordSchema),
+  authController.forgotPassword.bind(authController),
+);
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Reset password using a valid reset token
+ * @access  Public
+ */
+router.post(
+  '/reset-password',
+  passwordResetLimiter,
+  validate(resetPasswordSchema),
+  authController.resetPassword.bind(authController),
+);
+
+/**
+ * @route   POST /api/auth/verify-email
+ * @desc    Verify an email address using a verification token
+ * @access  Public
+ */
+router.post(
+  '/verify-email',
+  validate(verifyEmailSchema),
+  authController.verifyEmail.bind(authController),
+);
+
+/**
+ * @route   POST /api/auth/resend-verification
+ * @desc    Resend the email verification link
+ * @access  Private
+ */
+router.post(
+  '/resend-verification',
+  authLimiter,
+  authenticate,
+  authController.resendVerification.bind(authController),
+);
+
+/**
+ * @route   GET /api/auth/sessions
+ * @desc    List the current user's active sessions (devices)
+ * @access  Private
+ */
+router.get('/sessions', authenticate, authController.listSessions.bind(authController));
+
+/**
+ * @route   DELETE /api/auth/sessions/:id
+ * @desc    Revoke a single session (device)
+ * @access  Private
+ */
+router.delete('/sessions/:id', authenticate, authController.revokeSession.bind(authController));
 
 export default router;

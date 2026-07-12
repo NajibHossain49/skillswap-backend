@@ -16,6 +16,7 @@ import authRoutes from './modules/auth/auth.routes';
 import userRoutes from './modules/users/user.routes';
 import skillRoutes from './modules/skills/skill.routes';
 import sessionRoutes from './modules/sessions/session.routes';
+import notificationRoutes from './modules/notifications/notification.routes';
 import adminRoutes from './modules/admin/admin.routes';
 
 const app: Application = express();
@@ -105,6 +106,7 @@ app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/users`, userRoutes);
 app.use(`${API_PREFIX}/skills`, skillRoutes);
 app.use(`${API_PREFIX}/sessions`, sessionRoutes);
+app.use(`${API_PREFIX}/notifications`, notificationRoutes);
 app.use(`${API_PREFIX}/admin`, adminRoutes);
 
 // 404 handler

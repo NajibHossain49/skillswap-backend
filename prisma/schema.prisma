@@ -22,38 +22,104 @@ enum SessionStatus {
   CANCELLED
 }
 
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum NotificationType {
+  SESSION_BOOKED
+  SESSION_CANCELLED
+  SESSION_REMINDER
+  SESSION_COMPLETED
+  FEEDBACK_RECEIVED
+  BOOKING_REQUEST
+  BOOKING_ACCEPTED
+  BOOKING_REJECTED
+  MENTOR_APPROVED
+  SYSTEM
+}
+
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String
-  bio       String?
-  role      Role     @default(LEARNER)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  password            String
+  name                String
+  bio                 String?
+  role                Role      @default(LEARNER)
+  isActive            Boolean   @default(true)
+  tokenVersion        Int       @default(0)
+  isEmailVerified     Boolean   @default(false)
+  avatarUrl           String?
+  deletedAt           DateTime?
+  lastLoginAt         DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   // Relations
-  mentorSessions  Session[]     @relation("MentorSessions")
-  learnerSessions Session[]     @relation("LearnerSessions")
-  createdSkills   Skill[]       @relation("SkillCreator")
-  refreshTokens   RefreshToken[]
-  feedbacks       Feedback[]    @relation("LearnerFeedback")
+  mentorSessions     Session[]           @relation("MentorSessions")
+  learnerSessions    Session[]           @relation("LearnerSessions")
+  createdSkills      Skill[]             @relation("SkillCreator")
+  refreshTokens      RefreshToken[]
+  verificationTokens VerificationToken[]
+  notifications      Notification[]
+  feedbacks          Feedback[]          @relation("LearnerFeedback")
 
+  @@index([email])
+  @@index([role, isActive])
   @@map("users")
 }
 
 model RefreshToken {
   id        String   @id @default(uuid())
-  token     String   @unique
+  tokenHash String   @unique
   userId    String
+  familyId  String
+  userAgent String?
+  ipAddress String?
   expiresAt DateTime
   createdAt DateTime @default(now())
   isRevoked Boolean  @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+  @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+model VerificationToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  type      TokenType
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("verification_tokens")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  isRead    Boolean          @default(false)
+  metadata  Json?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
 }
 
 model Skill {
