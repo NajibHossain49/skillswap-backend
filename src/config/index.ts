@@ -12,6 +12,10 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   CORS_ORIGIN: z.string().default('*'),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+  APP_URL: z.string().default('http://localhost:3001'),
+  BCRYPT_ROUNDS: z.coerce.number().default(12),
 });
 
 const parseResult = envSchema.safeParse(process.env);
@@ -37,4 +41,10 @@ export const config = {
   cors: {
     origin: parseResult.data.CORS_ORIGIN,
   },
+  email: {
+    resendApiKey: parseResult.data.RESEND_API_KEY,
+    from: parseResult.data.EMAIL_FROM,
+  },
+  appUrl: parseResult.data.APP_URL,
+  bcryptRounds: parseResult.data.BCRYPT_ROUNDS,
 } as const;

@@ -9,11 +9,12 @@ export const errorHandler = (
   err: Error,
   req: Request,
   res: Response,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _next: NextFunction,
 ): Response => {
   logger.error({
     msg: 'Error occurred',
+    requestId: req.id,
     method: req.method,
     url: req.url,
     error: err.message,
@@ -38,6 +39,9 @@ export const errorHandler = (
     if (err.code === 'P2025') {
       return sendError(res, 'Record not found', 404);
     }
+    if (err.code === 'P2003' || err.code === 'P2014') {
+      return sendError(res, 'Cannot perform this action because related records exist', 409);
+    }
   }
 
   if (err instanceof Prisma.PrismaClientValidationError) {
@@ -52,7 +56,13 @@ export const errorHandler = (
     return sendError(res, 'Token expired', 401);
   }
 
-  // Generic errors
+  // Generic errors (unexpected) — log the full error with the request id for tracing
+  logger.error({
+    msg: 'Unhandled error',
+    requestId: req.id,
+    error: err,
+  });
+
   return sendError(
     res,
     process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,

@@ -1,8 +1,14 @@
 import express, { Application } from 'express';
 import helmet from 'helmet';
-import cors from 'cors';
+import cors, { CorsOptions } from 'cors';
+import compression from 'compression';
+import hpp from 'hpp';
 import { config } from './config';
+import { prisma } from './prisma/client';
+import { logger } from './utils/logger';
+import { requestId } from './middleware/requestId';
 import { requestLogger } from './middleware/requestLogger';
+import { globalLimiter } from './middleware/rateLimiter';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
 // Routes
@@ -14,36 +20,87 @@ import adminRoutes from './modules/admin/admin.routes';
 
 const app: Application = express();
 
+// Deployed behind a proxy (Vercel) — trust the first hop for correct client IPs.
+app.set('trust proxy', 1);
+
+// Build the CORS allowlist from a comma-separated CORS_ORIGIN value.
+const allowedOrigins = config.cors.origin
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter((origin) => origin.length > 0 && origin !== '*');
+
+const isDevelopment = config.env === 'development';
+const localhostRegex = /^https?:\/\/localhost(:\d+)?$/;
+
+const corsOptions: CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser clients (no Origin header) such as curl or server-to-server.
+    if (!origin) {
+      return callback(null, true);
+    }
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    if (isDevelopment && localhostRegex.test(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+};
+
 // Security middleware
-app.use(helmet());
 app.use(
-  cors({
-    origin: config.cors.origin,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    frameguard: { action: 'deny' },
+    hsts: { maxAge: 31536000, includeSubDomains: true },
+    referrerPolicy: { policy: 'no-referrer' },
   }),
 );
+app.use(cors(corsOptions));
+app.use(compression());
+app.use(hpp());
 
 // Body parsing
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging
+// Request context + logging
+app.use(requestId);
 app.use(requestLogger);
 
-// Health check
-app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    environment: config.env,
-    version: '1.0.0',
-  });
+// Health check — verifies the database is reachable.
+app.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      environment: config.env,
+      version: '1.0.0',
+    });
+  } catch (err) {
+    logger.error({ msg: 'Health check failed', error: err });
+    return res.status(503).json({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      environment: config.env,
+      version: '1.0.0',
+    });
+  }
 });
 
 // API routes
 const API_PREFIX = '/api';
+app.use(API_PREFIX, globalLimiter);
 app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/users`, userRoutes);
 app.use(`${API_PREFIX}/skills`, skillRoutes);

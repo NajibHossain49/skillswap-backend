@@ -64,12 +64,9 @@ describe('SkillService', () => {
       vi.mocked(prisma.skill.findUnique).mockResolvedValue(mockSkill as any);
       vi.mocked(prisma.skill.update).mockResolvedValue({ ...mockSkill, title: 'Updated' } as any);
 
-      const result = await skillService.updateSkill(
-        'skill-123',
-        'different-user',
-        'ADMIN' as Role,
-        { title: 'Updated' },
-      );
+      await skillService.updateSkill('skill-123', 'different-user', 'ADMIN' as Role, {
+        title: 'Updated',
+      });
 
       expect(prisma.skill.update).toHaveBeenCalledOnce();
     });

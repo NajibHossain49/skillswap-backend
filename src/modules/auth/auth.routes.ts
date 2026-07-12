@@ -3,6 +3,7 @@ import { authController } from './auth.controller';
 import { validate } from '../../middleware/validate';
 import { registerSchema, loginSchema, refreshTokenSchema } from './auth.schema';
 import { authenticate } from '../../middleware/auth';
+import { authLimiter } from '../../middleware/rateLimiter';
 
 const router = Router();
 
@@ -11,14 +12,19 @@ const router = Router();
  * @desc    Register a new user
  * @access  Public
  */
-router.post('/register', validate(registerSchema), authController.register.bind(authController));
+router.post(
+  '/register',
+  authLimiter,
+  validate(registerSchema),
+  authController.register.bind(authController),
+);
 
 /**
  * @route   POST /api/auth/login
  * @desc    Login user and get tokens
  * @access  Public
  */
-router.post('/login', validate(loginSchema), authController.login.bind(authController));
+router.post('/login', authLimiter, validate(loginSchema), authController.login.bind(authController));
 
 /**
  * @route   POST /api/auth/refresh
@@ -27,6 +33,7 @@ router.post('/login', validate(loginSchema), authController.login.bind(authContr
  */
 router.post(
   '/refresh',
+  authLimiter,
   validate(refreshTokenSchema),
   authController.refresh.bind(authController),
 );
