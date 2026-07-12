@@ -6,6 +6,9 @@ generator client {
 }
 
 datasource db {
+  // Prisma 7 no longer allows connection URLs in the schema. Runtime queries
+  // connect through the PrismaPg driver adapter in src/prisma/client.ts (the
+  // pooled DATABASE_URL); migrations connect via prisma.config.ts (DIRECT_URL).
   provider = "postgresql"
 }
 

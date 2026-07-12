@@ -7,6 +7,10 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().default('3000'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  // Non-pooled Postgres endpoint used only by `prisma migrate deploy` (migrations
+  // cannot run through the connection pooler). Optional at runtime; required for
+  // migrations. On Neon this is the host WITHOUT "-pooler".
+  DIRECT_URL: z.string().optional(),
   JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),
   JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
@@ -52,6 +56,7 @@ export const config = {
   port: parseInt(parseResult.data.PORT, 10),
   database: {
     url: parseResult.data.DATABASE_URL,
+    directUrl: parseResult.data.DIRECT_URL,
   },
   jwt: {
     accessSecret: parseResult.data.JWT_ACCESS_SECRET,
@@ -82,3 +87,69 @@ export const config = {
     password: parseResult.data.DOCS_PASSWORD,
   },
 } as const;
+
+/**
+ * Fail fast at boot on insecure production configuration. These are all things
+ * that would otherwise "work" (the server starts) but leave the deployment
+ * silently broken or unsafe — the worst kind of bug. We collect every problem
+ * and throw a single actionable error so an operator can fix them all at once.
+ */
+function assertProductionConfig(): void {
+  if (config.env !== 'production') return;
+
+  const errors: string[] = [];
+
+  // CORS: a wildcard or localhost origin in production means the API trusts any
+  // site (or a dev host) — combined with `credentials: true` this is unsafe.
+  const corsOrigin = config.cors.origin?.trim();
+  if (!corsOrigin || corsOrigin === '*') {
+    errors.push(
+      'CORS_ORIGIN must be set to your explicit frontend origin(s) in production ' +
+        '(it is unset or "*"). Example: CORS_ORIGIN=https://app.skillswap.com',
+    );
+  } else if (/localhost/i.test(corsOrigin)) {
+    errors.push(
+      `CORS_ORIGIN still contains "localhost" (got "${corsOrigin}"). Set it to the ` +
+        'deployed frontend origin(s) instead.',
+    );
+  }
+
+  // Cron endpoints are unauthenticated without this shared secret.
+  if (!config.cronSecret) {
+    errors.push(
+      'CRON_SECRET is required in production — it protects POST /api/internal/cron/:job. ' +
+        'Generate a strong random value and set it in the Vercel project and the ' +
+        'external cron GitHub secret.',
+    );
+  }
+
+  // Without a shared Redis store the rate limiters fall back to a per-lambda
+  // in-memory store, which resets every invocation → no real rate limiting.
+  if (!config.redis.url || !config.redis.token) {
+    errors.push(
+      'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required in production. ' +
+        'Without them the rate limiters silently fall back to a per-lambda in-memory ' +
+        'store, disabling rate limiting on serverless.',
+    );
+  }
+
+  // Neon's pooled endpoint (host contains "-pooler") is required at runtime so
+  // many concurrent lambdas don't exhaust the direct connection limit.
+  if (!config.database.url.includes('-pooler')) {
+    errors.push(
+      'DATABASE_URL must point at the Neon POOLED endpoint (its host contains ' +
+        '"-pooler") in production, e.g. ' +
+        '...-pooler.<region>.neon.tech/...?sslmode=require&connection_limit=1. ' +
+        'Use the non-pooled endpoint for DIRECT_URL (migrations) only.',
+    );
+  }
+
+  if (errors.length > 0) {
+    throw new Error(
+      'Unsafe production configuration — refusing to start:\n' +
+        errors.map((e) => `  • ${e}`).join('\n'),
+    );
+  }
+}
+
+assertProductionConfig();

@@ -1,0 +1,44 @@
+name: External cron (15-min jobs)
+
+# Vercel's Hobby plan caps you at 2 cron jobs that can only run once per day, so
+# the two frequent jobs live here instead. This workflow hits the same internal
+# HTTP endpoints Vercel Cron would, authenticated with the shared CRON_SECRET.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   DEPLOY_URL   – base URL of the Vercel deployment, e.g. https://skillswap.vercel.app
+#   CRON_SECRET  – must match the CRON_SECRET env var set in the Vercel project
+#
+# On Vercel Pro (up to 40 crons, any granularity) these can move back into
+# vercel.json and this workflow can be deleted.
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub cron runs in UTC and may be delayed under load.
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: external-cron
+  cancel-in-progress: false
+
+jobs:
+  trigger-jobs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: sessionReminders
+        run: |
+          curl --fail --silent --show-error --max-time 60 \
+            -X POST "${DEPLOY_URL%/}/api/internal/cron/sessionReminders" \
+            -H "x-cron-secret: ${CRON_SECRET}"
+        env:
+          DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: expireStaleBookings
+        run: |
+          curl --fail --silent --show-error --max-time 60 \
+            -X POST "${DEPLOY_URL%/}/api/internal/cron/expireStaleBookings" \
+            -H "x-cron-secret: ${CRON_SECRET}"
+        env:
+          DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

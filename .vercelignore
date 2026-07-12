@@ -1,0 +1,28 @@
+# Files not needed by the serverless runtime. Keeps the deployment bundle small
+# and prevents dev-only tooling from being uploaded.
+
+# Tests and coverage
+src/tests
+coverage
+
+# Build output (Vercel builds fresh via `vercel-build`)
+dist
+
+# Local / Docker orchestration
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Docs & CI
+README.md
+.github
+
+# Editor / OS cruft
+.vscode
+.idea
+.DS_Store
+*.log
+
+# Local env files (secrets are set in the Vercel dashboard)
+.env
+.env.*

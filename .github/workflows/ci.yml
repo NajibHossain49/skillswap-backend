@@ -37,7 +37,7 @@ jobs:
         run: npm run typecheck
 
       - name: Validate Prisma schema
-        run: npx prisma validate --config src/config/prisma.config.ts
+        run: npx prisma validate
 
       - name: Run tests
         run: npm run test:run
@@ -83,7 +83,7 @@ jobs:
         run: npm ci
 
       - name: Push Prisma schema to the test database
-        run: npx prisma db push --config src/config/prisma.config.ts
+        run: npx prisma db push
 
       - name: Run integration tests
         run: npm run test:integration

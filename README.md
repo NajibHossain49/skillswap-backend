@@ -15,6 +15,7 @@ Backend API for **SkillSwap** — a one-way skill-booking platform (despite the 
 - [Quick start](#quick-start)
 - [Environment variables](#environment-variables)
 - [Scripts](#scripts)
+- [Deploy to Vercel](#deploy-to-vercel)
 - [API reference](#api-reference)
 - [Scheduled jobs](#scheduled-jobs)
 - [API docs (Swagger)](#api-docs-swagger)
@@ -57,22 +58,28 @@ Parsed and validated at boot in `src/config/index.ts` — an invalid or missing 
 | --- | --- | --- | --- |
 | `NODE_ENV` | no | `development` | `development` \| `production` \| `test`. |
 | `PORT` | no | `3000` | HTTP port. |
-| `DATABASE_URL` | **yes** | — | PostgreSQL connection string. |
+| `DATABASE_URL` | **yes** | — | PostgreSQL connection string. On serverless use the Neon **pooled** endpoint (host contains `-pooler`) with `?sslmode=require&connection_limit=1`. |
+| `DIRECT_URL` | no* | — | Non-pooled Postgres endpoint used only by `prisma migrate deploy`. On Neon this is the host **without** `-pooler`. Required to run migrations on Vercel. |
 | `JWT_ACCESS_SECRET` | **yes** | — | Access-token secret (min 32 chars). |
 | `JWT_REFRESH_SECRET` | **yes** | — | Refresh-token secret (min 32 chars). |
 | `JWT_ACCESS_EXPIRES_IN` | no | `15m` | Access-token lifetime. |
 | `JWT_REFRESH_EXPIRES_IN` | no | `7d` | Refresh-token lifetime. |
-| `CORS_ORIGIN` | no | `*` | Comma-separated allowlist (localhost auto-allowed in dev). |
+| `CORS_ORIGIN` | no* | `*` | Comma-separated allowlist (localhost auto-allowed in dev). **Required** in production — must not be unset, `*`, or contain `localhost`. |
+| `UPSTASH_REDIS_REST_URL` | no* | — | Upstash Redis REST URL backing the distributed rate limiter. **Required** in production (serverless has no shared in-memory store). |
+| `UPSTASH_REDIS_REST_TOKEN` | no* | — | Upstash Redis REST token. **Required** in production. |
 | `RESEND_API_KEY` | no | — | Resend key; when unset, emails are logged instead of sent. |
 | `EMAIL_FROM` | no | — | From address for outbound email. |
 | `APP_URL` | no | `http://localhost:3001` | Frontend base URL used in email/notification links. |
 | `BCRYPT_ROUNDS` | no | `12` | bcrypt cost factor. |
-| `CRON_SECRET` | no* | — | Shared secret for `POST /api/internal/cron/:job`. Required to invoke cron endpoints. |
-| `ENABLE_CRON` | no | `true` off prod | `true`/`false`. Run in-process node-cron. Turn **off** on serverless. |
+| `CRON_SECRET` | no* | — | Shared secret for `POST /api/internal/cron/:job`. **Required** in production. |
+| `ENABLE_CRON` | no | `true` off prod | `true`/`false`. Run in-process node-cron. Automatically disabled on Vercel (`process.env.VERCEL`) and in tests. |
 | `ENABLE_DOCS` | no | `true` off prod | `true`/`false`. Serve Swagger UI + spec. |
 | `DOCS_USER` / `DOCS_PASSWORD` | no | — | If both set, protects `/api/docs` with HTTP Basic Auth. |
 
-\* Not required to boot, but the cron endpoints return `401` until it is configured.
+\* Optional in development, but **required in production** — `src/config/index.ts` runs a
+startup assertion (only when `NODE_ENV=production`) that refuses to boot if `CORS_ORIGIN`
+is unset/`*`/localhost, `CRON_SECRET` is missing, the Upstash rate-limit vars are missing,
+or `DATABASE_URL` is not the pooled (`-pooler`) endpoint.
 
 ---
 
@@ -81,7 +88,8 @@ Parsed and validated at boot in `src/config/index.ts` — an invalid or missing 
 | Command | Description |
 | --- | --- |
 | `npm run dev` | Dev server with hot reload (`tsx watch`). |
-| `npm run build` | Compile TypeScript to `dist/`. |
+| `npm run build` | `prisma generate && tsc` → compile to `dist/`. |
+| `npm run vercel-build` | Vercel build hook: `prisma generate && prisma migrate deploy && tsc`. Applies pending migrations (never `migrate dev`, which can prompt/reset). |
 | `npm start` | Run the compiled server. |
 | `npm run typecheck` | `tsc --noEmit`. |
 | `npm run lint` / `lint:fix` | ESLint. |
@@ -95,6 +103,86 @@ Parsed and validated at boot in `src/config/index.ts` — an invalid or missing 
 | `npm run db:push` | Push schema without a migration. |
 | `npm run db:studio` | Prisma Studio. |
 | `npm run db:seed` | Seed demo data. |
+
+---
+
+## Deploy to Vercel
+
+The app runs on Vercel as a serverless function. `api/index.ts` (project root) exports the
+Express app directly as the handler, and `vercel.json` rewrites **every** path (`/health`,
+`/api/*`) to `/api` so the Express router sees them. `src/server.ts` is untouched and still
+powers `npm run dev` and the Docker image (`app.listen`).
+
+### 1. Import the project
+
+Point Vercel at this repository. The build hook is `vercel-build`
+(`prisma generate && prisma migrate deploy && tsc`), so pending migrations are applied on
+every deploy using the **direct** database connection. Node 20+ is enforced via
+`engines.node`.
+
+### 2. Get the Neon connection strings
+
+In the Neon console → **Connection Details**, copy two URLs:
+
+- **Pooled** (`DATABASE_URL`) — the host **contains `-pooler`**. Append
+  `?sslmode=require&connection_limit=1`. Used at runtime; `connection_limit=1` + the pooled
+  host keep many concurrent lambdas from exhausting the database. Example:
+  `postgresql://user:pass@ep-cool-name-123456-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require&connection_limit=1`
+- **Direct** (`DIRECT_URL`) — the same host **without `-pooler`**. Used only by
+  `prisma migrate deploy` (migrations can't run through the pooler). Example:
+  `postgresql://user:pass@ep-cool-name-123456.us-east-2.aws.neon.tech/neondb?sslmode=require`
+
+### 3. Set environment variables (Vercel → Settings → Environment Variables)
+
+Set these for the **Production** environment (and Preview if you deploy previews):
+
+| Variable | Scope | Notes |
+| --- | --- | --- |
+| `NODE_ENV` | Production | `production`. Enables the startup safety assertion. |
+| `DATABASE_URL` | Production | Neon **pooled** URL (`-pooler`) + `?sslmode=require&connection_limit=1`. |
+| `DIRECT_URL` | Production | Neon **direct** URL (no `-pooler`). Needed for `migrate deploy`. |
+| `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | Production | ≥ 32 chars each. |
+| `CORS_ORIGIN` | Production | Explicit frontend origin(s), comma-separated. Never `*` or localhost. |
+| `CRON_SECRET` | Production | Strong random secret guarding the cron endpoints. |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Production | Required — without them rate limiting silently no-ops on serverless. |
+| `RESEND_API_KEY` / `EMAIL_FROM` | Production | Optional; emails are logged when unset. |
+| `APP_URL` | Production | Frontend base URL used in email/notification links. |
+| `ENABLE_DOCS` (+ `DOCS_USER` / `DOCS_PASSWORD`) | Production | Optional; serve Swagger UI in prod. |
+
+`VERCEL` is injected automatically by the platform — the code uses it to keep node-cron
+disabled on serverless, so you do **not** need to set `ENABLE_CRON`.
+
+If any production-critical variable is missing or unsafe, the app **refuses to boot** with a
+clear error (see `assertProductionConfig` in `src/config/index.ts`) rather than shipping a
+silently insecure deployment.
+
+### 4. Cron jobs on Vercel Hobby
+
+Vercel's **Hobby plan allows at most 2 cron jobs, each running at most once per day.** Only
+the two daily jobs live in `vercel.json`:
+
+| Job | Schedule (vercel.json) |
+| --- | --- |
+| `cleanupExpiredTokens` | `0 3 * * *` (daily 03:00) |
+| `autoCompleteSessions` | `0 4 * * *` (daily 04:00) |
+
+The other two jobs need finer granularity than Hobby crons allow, so they are driven by an
+**external scheduler** — a GitHub Actions workflow (`.github/workflows/cron.yml`) that runs
+every 15 minutes and `curl`s the internal endpoints:
+
+- `sessionReminders` — needs 15-minute granularity.
+- `expireStaleBookings` — runs frequently to release held credits.
+
+Add these **GitHub repository secrets** (Settings → Secrets and variables → Actions):
+
+- `DEPLOY_URL` — the deployment base URL, e.g. `https://your-app.vercel.app`.
+- `CRON_SECRET` — the **same** value as the Vercel `CRON_SECRET`.
+
+The workflow sends the secret in the `x-cron-secret` header, matching `verifyCronSecret`.
+
+> **Upgrading to Vercel Pro** raises the cron limits (up to 40 jobs, any granularity). Once
+> on Pro you can move `sessionReminders` (`*/15 * * * *`) and `expireStaleBookings` back into
+> `vercel.json`'s `crons` array and delete `.github/workflows/cron.yml`.
 
 ---
 
@@ -228,7 +316,9 @@ Base path: `/api`. Standard response envelope: `{ success, message, data?, error
 Job runners live in `src/jobs/`. They run **two** ways from the same code:
 
 1. **In-process** via `node-cron` (local / single instance) — enabled when `ENABLE_CRON=true`.
-2. **HTTP-triggered** via `POST /api/internal/cron/:job` for serverless platforms (e.g. Vercel Cron). The endpoint checks the `x-cron-secret` header (or `Authorization: Bearer <secret>`) against `CRON_SECRET` using `crypto.timingSafeEqual`. `vercel.json` wires the schedule.
+2. **HTTP-triggered** via `POST /api/internal/cron/:job` for serverless platforms (e.g. Vercel Cron). The endpoint checks the `x-cron-secret` header (or `Authorization: Bearer <secret>`) against `CRON_SECRET` using `crypto.timingSafeEqual`.
+
+On serverless the in-process scheduler is automatically disabled (`process.env.VERCEL` is set), and the schedule is split across two triggers because of the [Vercel Hobby cron limits](#4-cron-jobs-on-vercel-hobby): the two **daily** jobs (`cleanupExpiredTokens`, `autoCompleteSessions`) run from `vercel.json`, while the two **frequent** jobs (`sessionReminders`, `expireStaleBookings`) are driven by `.github/workflows/cron.yml` every 15 minutes.
 
 | Job | Schedule | What it does |
 | --- | --- | --- |
@@ -399,6 +489,9 @@ src/
   utils/            # cache, errors, jwt, crypto, response, prisma-filters
   prisma/           # Prisma client + seed
   tests/            # Unit tests + tests/integration/ (Supertest)
+api/                # Vercel serverless entrypoint (exports the Express app)
 prisma/             # schema.prisma + migrations
-vercel.json         # Vercel Cron schedule
+vercel.json         # Vercel build, rewrites, function config + daily crons
+.vercelignore       # Files excluded from the Vercel deployment bundle
+.github/workflows/  # cron.yml — external 15-min scheduler for Hobby plan
 ```

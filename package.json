@@ -5,12 +5,13 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "prisma generate && tsc",
+    "vercel-build": "prisma generate && prisma migrate deploy && tsc",
     "start": "node dist/server.js",
-    "db:generate": "prisma generate --config src/config/prisma.config.ts",
-    "db:migrate": "prisma migrate dev --config src/config/prisma.config.ts",
-    "db:push": "prisma db push --config src/config/prisma.config.ts",
-    "db:studio": "prisma studio --config src/config/prisma.config.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
     "db:seed": "tsx src/prisma/seed.ts",
     "test": "vitest",
     "test:run": "vitest run",
@@ -21,6 +22,9 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "postinstall": "prisma generate"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",

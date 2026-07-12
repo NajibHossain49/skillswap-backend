@@ -1,4 +1,5 @@
 import cron from 'node-cron';
+import { config } from '../config';
 import { logger } from '../utils/logger';
 import { cleanupExpiredTokens } from './cleanupExpiredTokens';
 import { sessionReminders } from './sessionReminders';
@@ -48,6 +49,17 @@ export const jobSchedule: Record<JobName, string> = {
  * this should stay disabled there (config.enableCron === false).
  */
 export function startScheduledJobs(): void {
+  // Only run the in-process node-cron scheduler as a long-lived process (local
+  // dev, Docker). On Vercel (`process.env.VERCEL` is set) the lambda is torn down
+  // between requests, so node-cron never fires — jobs are driven over HTTP via
+  // POST /api/internal/cron/:job instead. Tests never schedule background timers.
+  if (process.env.VERCEL || config.env === 'test') {
+    logger.info({
+      msg: 'In-process cron scheduler disabled (serverless/test); jobs run via HTTP',
+    });
+    return;
+  }
+
   for (const name of Object.keys(jobSchedule) as JobName[]) {
     cron.schedule(jobSchedule[name], () => {
       runJob(name).catch((err) => logger.error({ msg: `Scheduled job failed: ${name}`, err }));

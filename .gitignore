@@ -4,5 +4,4 @@ dist/
 *.log
 coverage/
 .DS_Store
-prisma/migrations/
 .vercel
