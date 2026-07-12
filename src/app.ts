@@ -23,6 +23,8 @@ import adminRoutes from './modules/admin/admin.routes';
 import creditRoutes from './modules/credits/credit.routes';
 import mentorRoutes from './modules/mentors/mentor.routes';
 import reportRoutes from './modules/reports/report.routes';
+import internalRoutes from './modules/internal/internal.routes';
+import { mountDocs } from './docs';
 
 const app: Application = express();
 
@@ -118,6 +120,10 @@ app.use(`${API_PREFIX}/mentors`, mentorRoutes);
 app.use(`${API_PREFIX}/credits`, creditRoutes);
 app.use(`${API_PREFIX}/reports`, reportRoutes);
 app.use(`${API_PREFIX}/admin`, adminRoutes);
+app.use(`${API_PREFIX}/internal`, internalRoutes);
+
+// API documentation (Swagger UI + raw spec). Gated in production by config.
+mountDocs(app, API_PREFIX);
 
 // 404 handler
 app.use(notFoundHandler);

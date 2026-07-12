@@ -285,6 +285,68 @@ export class BookingService {
     return updated;
   }
 
+  /**
+   * Expire PENDING booking requests whose proposed time is in the past. If a
+   * request somehow already had credits held against a linked session, refund
+   * them; a plain PENDING request holds none, so this is usually a no-op refund.
+   * Idempotent: only rows still PENDING are transitioned.
+   */
+  async expireStalePendingRequests(): Promise<{ expired: number; ids: string[] }> {
+    const stale = await prisma.bookingRequest.findMany({
+      where: { status: BookingRequestStatus.PENDING, proposedAt: { lt: new Date() } },
+      select: { id: true, learnerId: true, sessionId: true, skill: { select: { title: true } } },
+    });
+
+    const ids: string[] = [];
+    for (const req of stale) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          const flipped = await tx.bookingRequest.updateMany({
+            where: { id: req.id, status: BookingRequestStatus.PENDING },
+            data: { status: BookingRequestStatus.EXPIRED },
+          });
+          if (flipped.count === 0) return;
+
+          if (req.sessionId) {
+            const agg = await tx.creditTransaction.aggregate({
+              where: { sessionId: req.sessionId, userId: req.learnerId },
+              _sum: { amount: true },
+            });
+            const held = Math.max(0, -(agg._sum.amount ?? 0));
+            if (held > 0) {
+              await creditService.transfer(
+                {
+                  userId: req.learnerId,
+                  amount: held,
+                  type: CreditTxnType.REFUND,
+                  sessionId: req.sessionId,
+                  description: 'Refund for expired booking request',
+                },
+                tx,
+              );
+            }
+          }
+
+          ids.push(req.id);
+        });
+
+        void notificationService
+          .notify({
+            userId: req.learnerId,
+            type: NotificationType.SYSTEM,
+            title: 'Booking request expired',
+            body: `Your "${req.skill.title}" request expired because the proposed time has passed.`,
+            metadata: { bookingRequestId: req.id },
+          })
+          .catch((err) => logger.error({ msg: 'Failed to send booking expired notification', err }));
+      } catch (err) {
+        logger.error({ msg: 'Failed to expire booking request', id: req.id, err });
+      }
+    }
+
+    return { expired: ids.length, ids };
+  }
+
   private async hasSchedulingConflict(
     client: Prisma.TransactionClient,
     mentorId: string,

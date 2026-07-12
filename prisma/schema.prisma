@@ -215,6 +215,7 @@ model Session {
   status       SessionStatus @default(PENDING)
   meetingLink  String?
   cancelReason String?
+  reminderSentAt DateTime? // set once the T-1h reminder has been dispatched (idempotency)
   deletedAt    DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt

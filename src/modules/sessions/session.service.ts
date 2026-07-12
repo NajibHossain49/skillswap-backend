@@ -444,6 +444,138 @@ export class SessionService {
     return feedback;
   }
 
+  /**
+   * Sweep SCHEDULED sessions whose end time passed more than `graceHours` ago,
+   * mark them COMPLETED and settle the held credits to the mentor — the same
+   * settlement `updateSessionStatus` performs, but driven by the scheduler for
+   * sessions nobody closed out manually. Idempotent: only rows still SCHEDULED
+   * are flipped, inside a transaction.
+   */
+  async autoCompleteStaleSessions(graceHours = 24): Promise<{ completed: number; sessionIds: string[] }> {
+    const now = Date.now();
+    const graceMs = graceHours * 60 * 60 * 1000;
+    // Necessary (coarse) condition: a session cannot have ended >graceHours ago
+    // unless it also started before then. We refine by exact end time below.
+    const candidates = await prisma.session.findMany({
+      where: { status: 'SCHEDULED', ...notDeleted, scheduledAt: { lt: new Date(now - graceMs) } },
+      select: { id: true, duration: true, scheduledAt: true, learnerId: true, mentorId: true, title: true },
+    });
+
+    const due = candidates.filter(
+      (s) => s.scheduledAt.getTime() + s.duration * 60_000 < now - graceMs,
+    );
+
+    const completedIds: string[] = [];
+    for (const s of due) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          const flipped = await tx.session.updateMany({
+            where: { id: s.id, status: 'SCHEDULED' },
+            data: { status: 'COMPLETED' },
+          });
+          if (flipped.count === 0) return; // someone else already handled it
+
+          if (s.learnerId) {
+            const net = await this.learnerNetForSession(tx, s.id, s.learnerId);
+            const held = Math.max(0, -net);
+            if (held > 0) {
+              await creditService.transfer(
+                {
+                  userId: s.mentorId,
+                  amount: held,
+                  type: CreditTxnType.EARNED,
+                  sessionId: s.id,
+                  description: `Auto-completed: earned for "${s.title}"`,
+                },
+                tx,
+              );
+            }
+          }
+
+          await tx.user.update({
+            where: { id: s.mentorId },
+            data: { totalSessionsTaught: { increment: 1 } },
+          });
+
+          completedIds.push(s.id);
+        });
+
+        if (s.learnerId) {
+          void notificationService
+            .notify({
+              userId: s.learnerId,
+              type: NotificationType.SESSION_COMPLETED,
+              title: 'Session completed',
+              body: `Your session "${s.title}" was automatically marked complete. Leave feedback to help others!`,
+              link: `${config.appUrl}/sessions/${s.id}/feedback`,
+              metadata: { sessionId: s.id, autoCompleted: true },
+            })
+            .catch((err) =>
+              logger.error({ msg: 'Failed to send auto-complete notification', err }),
+            );
+        }
+      } catch (err) {
+        logger.error({ msg: 'Failed to auto-complete session', sessionId: s.id, err });
+      }
+    }
+
+    return { completed: completedIds.length, sessionIds: completedIds };
+  }
+
+  /**
+   * Dispatch T-1h reminders for SCHEDULED sessions starting in `[55, 70)` minutes
+   * that have not been reminded yet. `reminderSentAt` makes this idempotent so
+   * overlapping scheduler ticks never double-send.
+   */
+  async sendDueReminders(): Promise<{ reminded: number; sessionIds: string[] }> {
+    const now = Date.now();
+    const from = new Date(now + 55 * 60_000);
+    const to = new Date(now + 70 * 60_000);
+
+    const sessions = await prisma.session.findMany({
+      where: {
+        status: 'SCHEDULED',
+        ...notDeleted,
+        reminderSentAt: null,
+        scheduledAt: { gte: from, lt: to },
+      },
+      include: {
+        mentor: { select: { id: true, name: true } },
+        learner: { select: { id: true, name: true } },
+      },
+    });
+
+    const remindedIds: string[] = [];
+    for (const s of sessions) {
+      // Claim the reminder first so a concurrent tick cannot also send it.
+      const claimed = await prisma.session.updateMany({
+        where: { id: s.id, reminderSentAt: null },
+        data: { reminderSentAt: new Date() },
+      });
+      if (claimed.count === 0) continue;
+
+      const parties = [s.mentor, s.learner].filter(
+        (p): p is NonNullable<typeof p> => !!p,
+      );
+      const link = `${config.appUrl}/sessions/${s.id}`;
+      for (const party of parties) {
+        void notificationService
+          .notify({
+            userId: party.id,
+            type: NotificationType.SESSION_REMINDER,
+            title: 'Session starting soon',
+            body: `Your session "${s.title}" starts in about an hour.`,
+            link,
+            metadata: { sessionId: s.id },
+          })
+          .catch((err) => logger.error({ msg: 'Failed to send session reminder', err }));
+      }
+      remindedIds.push(s.id);
+    }
+
+    return { reminded: remindedIds.length, sessionIds: remindedIds };
+  }
+
   async getMentorStats(mentorId: string) {
     const [total, byStatus, avgRating] = await Promise.all([
       prisma.session.count({ where: { mentorId, ...notDeleted } }),

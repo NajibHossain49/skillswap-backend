@@ -1,10 +1,15 @@
 import { Prisma, MentorStatus, ReportStatus } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { notDeleted } from '../../utils/prisma-filters';
+import { cache, CacheKeys, DEFAULT_TTL_MS } from '../../utils/cache';
 import { AuditLogQueryDto } from './admin.schema';
 
 export class AdminService {
   async getDashboardStats() {
+    return cache.wrap(CacheKeys.adminDashboard, DEFAULT_TTL_MS, () => this.computeDashboardStats());
+  }
+
+  private async computeDashboardStats() {
     const [
       totalUsers,
       usersByRole,

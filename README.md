@@ -1,402 +1,404 @@
 # SkillSwap Backend
 
-A modular, production-ready backend system for a peer-to-peer skill exchange platform. Built with **Node.js**, **Express**, **TypeScript**, **Prisma ORM**, and **PostgreSQL**.
+Backend API for **SkillSwap** — a one-way skill-booking platform (despite the name, there is no bartering). Learners spend **credits** to book sessions with approved **mentors**. It ships with a credit economy, mentor approval + moderation, JWT auth with refresh-token rotation & reuse detection, scheduled maintenance jobs, and generated OpenAPI docs.
+
+- **Runtime:** Node.js + Express (TypeScript)
+- **Database:** PostgreSQL via Prisma (`@prisma/adapter-pg`)
+- **Auth:** JWT access/refresh tokens (rotating families, reuse detection), bcrypt
+- **Validation:** Zod (also the source of the OpenAPI spec)
+- **Tests:** Vitest (unit, mocked Prisma) + Supertest (integration, real DB)
 
 ---
 
-🔗 **Frontend Repository:**
-SkillSwap Frontend (Next.js + TypeScript + Tailwind CSS + eg,..)
-👉 [https://github.com/NajibHossain49/skillswap-frontend.git](https://github.com/NajibHossain49/skillswap-frontend.git)
+## Table of contents
 
-⚠️ The backend must be running on `http://localhost:3001` for the frontend to function correctly.
-
-
-## Table of Contents
-
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Environment Variables](#environment-variables)
-- [API Reference](#api-reference)
+- [Quick start](#quick-start)
+- [Environment variables](#environment-variables)
+- [Scripts](#scripts)
+- [API reference](#api-reference)
+- [Scheduled jobs](#scheduled-jobs)
+- [API docs (Swagger)](#api-docs-swagger)
+- [Caching](#caching)
+- [Database schema](#database-schema)
 - [Testing](#testing)
-- [Docker](#docker)
-- [Architecture](#architecture)
+- [Project layout](#project-layout)
 
 ---
 
-## Features
-
-- **JWT Authentication** with access + refresh token rotation
-- **Role-Based Access Control (RBAC)** — ADMIN, MENTOR, LEARNER
-- **Modular Architecture** — each module is self-contained
-- **Zod** runtime validation on all inputs
-- **Prisma ORM** with full type safety
-- **Structured logging** with Pino
-- **Centralized error handling**
-- **Helmet + CORS** security middleware
-- **Full test suite** with Vitest
-- **Docker** support
-
----
-
-## Tech Stack
-
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| Node.js | v22+ | Runtime |
-| Express | v4.21 | HTTP framework |
-| TypeScript | v5.6 | Type safety |
-| Prisma | v5.22 | ORM & migrations |
-| PostgreSQL | v17 | Database |
-| Zod | v3.23 | Runtime validation |
-| JWT | v9.0 | Authentication |
-| bcrypt | v5.1 | Password hashing |
-| Pino | v9.5 | Structured logging |
-| Helmet | v8.0 | Security headers |
-| Vitest | v2.1 | Testing |
-
----
-
-## Project Structure
-
-```
-skillswap/
-├── prisma/
-│   └── schema.prisma            # Database schema
-├── src/
-│   ├── config/
-│   │   └── index.ts             # Env config with Zod validation
-│   ├── middleware/
-│   │   ├── auth.ts              # JWT authentication + RBAC
-│   │   ├── errorHandler.ts      # Global error handler
-│   │   ├── requestLogger.ts     # Structured request logging
-│   │   └── validate.ts          # Zod request validation
-│   ├── modules/
-│   │   ├── auth/                # Registration, login, token management
-│   │   │   ├── auth.controller.ts
-│   │   │   ├── auth.routes.ts
-│   │   │   ├── auth.schema.ts
-│   │   │   └── auth.service.ts
-│   │   ├── users/               # User profile management
-│   │   │   ├── user.controller.ts
-│   │   │   ├── user.routes.ts
-│   │   │   ├── user.schema.ts
-│   │   │   └── user.service.ts
-│   │   ├── skills/              # Skill CRUD
-│   │   │   ├── skill.controller.ts
-│   │   │   ├── skill.routes.ts
-│   │   │   ├── skill.schema.ts
-│   │   │   └── skill.service.ts
-│   │   ├── sessions/            # Session booking + feedback
-│   │   │   ├── session.controller.ts
-│   │   │   ├── session.routes.ts
-│   │   │   ├── session.schema.ts
-│   │   │   └── session.service.ts
-│   │   └── admin/               # Admin dashboard + stats
-│   │       ├── admin.controller.ts
-│   │       ├── admin.routes.ts
-│   │       └── admin.service.ts
-│   ├── prisma/
-│   │   ├── client.ts            # Prisma singleton
-│   │   └── seed.ts              # Database seeder
-│   ├── tests/                   # Unit tests
-│   │   ├── setup.ts
-│   │   ├── jwt.test.ts
-│   │   ├── auth.service.test.ts
-│   │   ├── skill.service.test.ts
-│   │   └── response.test.ts
-│   ├── utils/
-│   │   ├── errors.ts            # Custom error classes
-│   │   ├── jwt.ts               # JWT helpers
-│   │   ├── logger.ts            # Pino logger
-│   │   └── response.ts          # Standardized API responses
-│   ├── app.ts                   # Express app setup
-│   └── server.ts                # Entry point
-├── .env.example
-├── .gitignore
-├── .prettierrc
-├── docker-compose.yml
-├── Dockerfile
-├── eslint.config.js
-├── package.json
-├── tsconfig.json
-└── vitest.config.ts
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-- Node.js v22+
-- PostgreSQL v14+
-- npm v10+
-
-### 1. Install dependencies
+## Quick start
 
 ```bash
+# 1. Install dependencies
 npm install
-```
 
-### 2. Set up environment
+# 2. Configure environment
+cp .env.example .env   # then edit values (at minimum DATABASE_URL + JWT secrets)
 
-```bash
-cp .env.example .env
-# Edit .env with your database URL and secrets
-```
-
-### 3. Run database migrations
-
-```bash
-npm run db:migrate
-```
-
-### 4. Generate Prisma client
-
-```bash
+# 3. Apply migrations and generate the Prisma client
+npm run db:migrate      # dev: create/apply migrations
 npm run db:generate
-```
 
-### 5. Seed the database (optional)
-
-```bash
+# 4. (optional) Seed demo data
 npm run db:seed
-```
 
-**Seeded accounts:**
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | admin@skillswap.com | Adm!n-SkillSwap-2026 |
-| Mentor | michael.kovacs@skillswap.com | Mentor2026!! |
-| Learner | alex.k@skillswap.com | Learner2026!! |
-
-### 6. Start development server
-
-```bash
+# 5. Run the dev server (hot reload)
 npm run dev
 ```
 
-Server starts at `http://localhost:3000`
+The server starts on `http://localhost:$PORT` (default `3000`). Health check: `GET /health`. Interactive docs: `GET /api/docs`.
 
 ---
 
-## Environment Variables
+## Environment variables
+
+Parsed and validated at boot in `src/config/index.ts` — an invalid or missing required variable aborts startup.
 
 | Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `NODE_ENV` | No | `development` | Environment |
-| `PORT` | No | `3000` | Server port |
-| `DATABASE_URL` | **Yes** | — | PostgreSQL connection string |
-| `JWT_ACCESS_SECRET` | **Yes** | — | Access token secret (min 32 chars) |
-| `JWT_REFRESH_SECRET` | **Yes** | — | Refresh token secret (min 32 chars) |
-| `JWT_ACCESS_EXPIRES_IN` | No | `15m` | Access token expiry |
-| `JWT_REFRESH_EXPIRES_IN` | No | `7d` | Refresh token expiry |
-| `CORS_ORIGIN` | No | `*` | Allowed CORS origin |
+| --- | --- | --- | --- |
+| `NODE_ENV` | no | `development` | `development` \| `production` \| `test`. |
+| `PORT` | no | `3000` | HTTP port. |
+| `DATABASE_URL` | **yes** | — | PostgreSQL connection string. |
+| `JWT_ACCESS_SECRET` | **yes** | — | Access-token secret (min 32 chars). |
+| `JWT_REFRESH_SECRET` | **yes** | — | Refresh-token secret (min 32 chars). |
+| `JWT_ACCESS_EXPIRES_IN` | no | `15m` | Access-token lifetime. |
+| `JWT_REFRESH_EXPIRES_IN` | no | `7d` | Refresh-token lifetime. |
+| `CORS_ORIGIN` | no | `*` | Comma-separated allowlist (localhost auto-allowed in dev). |
+| `RESEND_API_KEY` | no | — | Resend key; when unset, emails are logged instead of sent. |
+| `EMAIL_FROM` | no | — | From address for outbound email. |
+| `APP_URL` | no | `http://localhost:3001` | Frontend base URL used in email/notification links. |
+| `BCRYPT_ROUNDS` | no | `12` | bcrypt cost factor. |
+| `CRON_SECRET` | no* | — | Shared secret for `POST /api/internal/cron/:job`. Required to invoke cron endpoints. |
+| `ENABLE_CRON` | no | `true` off prod | `true`/`false`. Run in-process node-cron. Turn **off** on serverless. |
+| `ENABLE_DOCS` | no | `true` off prod | `true`/`false`. Serve Swagger UI + spec. |
+| `DOCS_USER` / `DOCS_PASSWORD` | no | — | If both set, protects `/api/docs` with HTTP Basic Auth. |
+
+\* Not required to boot, but the cron endpoints return `401` until it is configured.
 
 ---
 
-## API Reference
+## Scripts
 
-All responses follow this format:
-```json
-{
-  "success": true,
-  "message": "Description",
-  "data": {}
-}
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Dev server with hot reload (`tsx watch`). |
+| `npm run build` | Compile TypeScript to `dist/`. |
+| `npm start` | Run the compiled server. |
+| `npm run typecheck` | `tsc --noEmit`. |
+| `npm run lint` / `lint:fix` | ESLint. |
+| `npm run format` | Prettier. |
+| `npm test` | Unit tests (watch, mocked Prisma). |
+| `npm run test:run` | Unit tests once (CI). |
+| `npm run test:coverage` | Unit tests with coverage. |
+| `npm run test:integration` | Integration tests against a **real DB** (Supertest). |
+| `npm run db:migrate` | Create & apply a dev migration. |
+| `npm run db:generate` | Generate the Prisma client. |
+| `npm run db:push` | Push schema without a migration. |
+| `npm run db:studio` | Prisma Studio. |
+| `npm run db:seed` | Seed demo data. |
+
+---
+
+## API reference
+
+Base path: `/api`. Standard response envelope: `{ success, message, data?, errors? }`.
+
+**Access legend:** `Public` (no auth) · `Auth` (any logged-in user) · `Learner` / `Mentor` / `Admin` (role-gated) · `Approved Mentor` (mentor whose application is approved, or admin) · `Cron secret` (`x-cron-secret` header).
+
+### Auth — `/api/auth`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| POST | `/register` | Public | Register (always as `LEARNER`). |
+| POST | `/login` | Public | Login; returns token pair. |
+| POST | `/refresh` | Public | Rotate refresh token (reuse detection). |
+| POST | `/logout` | Public | Revoke a refresh token. |
+| POST | `/logout-all` | Auth | Revoke all sessions. |
+| GET | `/me` | Auth | Current token identity. |
+| POST | `/change-password` | Auth (strict) | Change password; revokes sessions. |
+| POST | `/forgot-password` | Public | Request reset link (generic response). |
+| POST | `/reset-password` | Public | Reset password with token. |
+| POST | `/verify-email` | Public | Verify email with token. |
+| POST | `/resend-verification` | Auth | Resend verification email. |
+| GET | `/sessions` | Auth | List active device sessions. |
+| DELETE | `/sessions/:id` | Auth | Revoke a device session. |
+
+### Users — `/api/users`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| GET | `/profile` | Auth | Get own profile. |
+| PATCH | `/profile` | Auth | Update own profile. |
+| GET | `/` | Admin | List users. |
+| GET | `/:id` | Admin | Get user by id. |
+| PATCH | `/:id/role` | Admin | Change role *(audited)*. |
+| PATCH | `/:id/deactivate` | Admin | Deactivate user *(audited)*. |
+| PATCH | `/:id/activate` | Admin | Activate user *(audited)*. |
+| DELETE | `/:id` | Admin | Soft-delete user *(audited)*. |
+
+### Skills — `/api/skills`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| GET | `/` | Public | List/search skills. |
+| GET | `/categories` | Public | Distinct categories *(cached 60s)*. |
+| GET | `/:id` | Public | Get skill. |
+| POST | `/` | Approved Mentor | Create skill. |
+| PATCH | `/:id` | Owner Mentor / Admin | Update skill. |
+| DELETE | `/:id` | Owner Mentor / Admin | Soft-delete skill. |
+
+### Sessions — `/api/sessions`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| GET | `/` | Auth | List sessions (role-scoped). |
+| GET | `/stats` | Mentor / Admin | Mentor session stats. |
+| POST | `/` | Approved Mentor | Create an open session. |
+| GET | `/:id` | Participant / Admin | Get session. |
+| POST | `/:id/book` | Learner | Book an open session (atomic, credit-checked). |
+| PATCH | `/:id/status` | Participant / Admin | Transition status (settles credits). |
+| POST | `/:id/feedback` | Learner | Leave feedback. |
+| GET | `/:id/feedback` | Participant / Admin | Get feedback. |
+
+### Bookings — `/api/bookings`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| POST | `/` | Learner | Create a booking request. |
+| GET | `/` | Auth | List requests (role-scoped). |
+| GET | `/:id` | Participant / Admin | Get request. |
+| PATCH | `/:id/accept` | Mentor | Accept → creates a session. |
+| PATCH | `/:id/reject` | Mentor | Reject request. |
+| PATCH | `/:id/cancel` | Learner | Cancel request. |
+
+### Availability — `/api/availability`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| GET | `/me` | Mentor | Own availability rules. |
+| POST | `/` | Mentor | Create a slot rule. |
+| PATCH | `/:id` | Mentor (owner) | Update a slot rule. |
+| DELETE | `/:id` | Mentor (owner) | Delete a slot rule. |
+| GET | `/mentor/:mentorId` | Public | A mentor's weekly rules. |
+| GET | `/mentor/:mentorId/slots` | Public | Concrete bookable slots for a date. |
+
+### Mentors — `/api/mentors`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| GET | `/` | Public | Mentor discovery (filter/search/sort). |
+| GET | `/:id` | Public | Public mentor profile. |
+| GET | `/:id/reviews` | Public | Paginated reviews. |
+| POST | `/apply` | Auth | Apply to become a mentor → `PENDING`. |
+
+### Credits — `/api/credits`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| GET | `/balance` | Auth | Current credit balance. |
+| GET | `/transactions` | Auth | Credit ledger (paginated). |
+
+### Notifications — `/api/notifications`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| GET | `/` | Auth | List notifications. |
+| GET | `/unread-count` | Auth | Unread count. |
+| PATCH | `/read-all` | Auth | Mark all read. |
+| PATCH | `/:id/read` | Auth (owner) | Mark one read. |
+| DELETE | `/:id` | Auth (owner) | Delete one. |
+
+### Reports — `/api/reports`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| POST | `/` | Auth | File a report (cannot report yourself). |
+| GET | `/` | Admin | List reports (`?status`). |
+| GET | `/:id` | Admin | Get a report. |
+| PATCH | `/:id/resolve` | Admin | Resolve/dismiss *(audited)*. |
+
+### Admin — `/api/admin`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| GET | `/dashboard` | Admin | Platform stats *(cached 60s)*: users/sessions, open reports, pending mentors, credits in circulation, 7-day signup trend. |
+| GET | `/activity` | Admin | Activity over the last N days. |
+| GET | `/audit-logs` | Admin | Audit trail (`?actorId&entity`). |
+| POST | `/credits/adjust` | Admin | Manual balance adjustment *(audited)*. |
+| GET | `/mentor-applications` | Admin | List applications (defaults `PENDING`). |
+| PATCH | `/mentor-applications/:userId` | Admin | Approve/reject *(audited)*. |
+
+### Internal (cron) — `/api/internal`
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| POST/GET | `/cron/:job` | Cron secret | Invoke a scheduled job by name. |
+
+---
+
+## Scheduled jobs
+
+Job runners live in `src/jobs/`. They run **two** ways from the same code:
+
+1. **In-process** via `node-cron` (local / single instance) — enabled when `ENABLE_CRON=true`.
+2. **HTTP-triggered** via `POST /api/internal/cron/:job` for serverless platforms (e.g. Vercel Cron). The endpoint checks the `x-cron-secret` header (or `Authorization: Bearer <secret>`) against `CRON_SECRET` using `crypto.timingSafeEqual`. `vercel.json` wires the schedule.
+
+| Job | Schedule | What it does |
+| --- | --- | --- |
+| `cleanupExpiredTokens` | daily `03:00` | Delete expired refresh tokens (and revoked ones >30d old); delete used/expired verification tokens. |
+| `sessionReminders` | every 15 min | For `SCHEDULED` sessions starting in ~1 hour, notify both parties. Idempotent via `Session.reminderSentAt`. |
+| `autoCompleteSessions` | hourly | `SCHEDULED` sessions whose end passed >24h ago → `COMPLETED`, settling held credits to the mentor. |
+| `expireStaleBookings` | hourly | `PENDING` booking requests past their proposed time → `EXPIRED`, refunding any held credits. |
+
+Trigger manually:
+
+```bash
+curl -X POST http://localhost:3000/api/internal/cron/sessionReminders \
+  -H "x-cron-secret: $CRON_SECRET"
 ```
 
-### Auth
+---
 
-| Method | Endpoint | Access | Description |
-|--------|----------|--------|-------------|
-| POST | `/api/auth/register` | Public | Register new user |
-| POST | `/api/auth/login` | Public | Login |
-| POST | `/api/auth/refresh` | Public | Refresh tokens |
-| POST | `/api/auth/logout` | Public | Logout (revoke token) |
-| POST | `/api/auth/logout-all` | Private | Logout all devices |
-| GET | `/api/auth/me` | Private | Get token info |
+## API docs (Swagger)
 
-**Register example:**
-```json
-POST /api/auth/register
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "Secret@123",
-  "role": "LEARNER"
-}
+The OpenAPI 3 spec is **generated from the existing Zod schemas** (`src/docs/openapi.ts`) — request bodies mirror real validation, and a `bearerAuth` security scheme is declared.
+
+- **Swagger UI:** `GET /api/docs`
+- **Raw spec:** `GET /api/docs.json`
+
+Docs are on by default outside production. In production set `ENABLE_DOCS=true` to serve them, and optionally `DOCS_USER` + `DOCS_PASSWORD` to require HTTP Basic Auth.
+
+---
+
+## Caching
+
+A small TTL cache (`src/utils/cache.ts`) fronts two hot reads (60s TTL):
+
+- `GET /api/skills/categories` — busted on skill create/update/delete.
+- `GET /api/admin/dashboard`.
+
+The `Cache` interface is intentionally minimal so it can be swapped for Redis without touching call sites.
+
+---
+
+## Database schema
+
+```mermaid
+erDiagram
+    User ||--o{ Skill : "creates"
+    User ||--o{ Session : "mentors"
+    User ||--o{ Session : "learns"
+    User ||--o{ RefreshToken : "has"
+    User ||--o{ VerificationToken : "has"
+    User ||--o{ Notification : "receives"
+    User ||--o{ Availability : "defines"
+    User ||--o{ CreditTransaction : "ledger"
+    User ||--o{ Feedback : "writes"
+    User ||--o{ BookingRequest : "sends"
+    User ||--o{ BookingRequest : "receives"
+
+    Skill ||--o{ Session : "for"
+    Skill ||--o{ BookingRequest : "for"
+
+    Session ||--o| Feedback : "has"
+    Session ||--o| BookingRequest : "created from"
+
+    User {
+      string id PK
+      string email UK
+      string name
+      Role role
+      MentorStatus mentorStatus
+      int creditBalance
+      float ratingAvg
+      int ratingCount
+      datetime deletedAt
+    }
+    Skill {
+      string id PK
+      string title
+      string category
+      int creditCost
+      string createdById FK
+      datetime deletedAt
+    }
+    Session {
+      string id PK
+      string mentorId FK
+      string learnerId FK
+      string skillId FK
+      datetime scheduledAt
+      int duration
+      SessionStatus status
+      datetime reminderSentAt
+      datetime deletedAt
+    }
+    BookingRequest {
+      string id PK
+      string learnerId FK
+      string mentorId FK
+      string skillId FK
+      datetime proposedAt
+      BookingRequestStatus status
+      string sessionId FK
+    }
+    CreditTransaction {
+      string id PK
+      string userId FK
+      int amount
+      int balanceAfter
+      CreditTxnType type
+      string sessionId
+    }
+    Feedback {
+      string id PK
+      string sessionId FK
+      string learnerId FK
+      int rating
+    }
+    Report {
+      string id PK
+      string reporterId
+      ReportReason reason
+      ReportStatus status
+    }
+    AuditLog {
+      string id PK
+      string actorId
+      string action
+      string entity
+      string entityId
+    }
 ```
 
-### Users
-
-| Method | Endpoint | Access | Description |
-|--------|----------|--------|-------------|
-| GET | `/api/users/profile` | Private | My profile |
-| PATCH | `/api/users/profile` | Private | Update my profile |
-| GET | `/api/users` | Admin | All users |
-| GET | `/api/users/:id` | Admin | User by ID |
-| PATCH | `/api/users/:id/role` | Admin | Update user role |
-| PATCH | `/api/users/:id/deactivate` | Admin | Deactivate user |
-| PATCH | `/api/users/:id/activate` | Admin | Activate user |
-| DELETE | `/api/users/:id` | Admin | Delete user |
-
-### Skills
-
-| Method | Endpoint | Access | Description |
-|--------|----------|--------|-------------|
-| GET | `/api/skills` | Public | Browse skills (paginated) |
-| GET | `/api/skills/categories` | Public | List categories |
-| GET | `/api/skills/:id` | Public | Skill details |
-| POST | `/api/skills` | Mentor/Admin | Create skill |
-| PATCH | `/api/skills/:id` | Mentor (owner)/Admin | Update skill |
-| DELETE | `/api/skills/:id` | Mentor (owner)/Admin | Delete skill |
-
-**Create skill example:**
-```json
-POST /api/skills
-Authorization: Bearer <token>
-{
-  "title": "Python for Beginners",
-  "description": "Learn Python from the ground up with practical examples",
-  "category": "Programming"
-}
-```
-
-### Sessions
-
-| Method | Endpoint | Access | Description |
-|--------|----------|--------|-------------|
-| GET | `/api/sessions` | Private | Browse sessions |
-| POST | `/api/sessions` | Mentor/Admin | Create session |
-| GET | `/api/sessions/stats` | Mentor/Admin | Mentor statistics |
-| GET | `/api/sessions/:id` | Private | Session details |
-| POST | `/api/sessions/:id/book` | Learner | Book a session |
-| PATCH | `/api/sessions/:id/status` | Private | Update status |
-| POST | `/api/sessions/:id/feedback` | Learner | Submit feedback |
-| GET | `/api/sessions/:id/feedback` | Private | Get feedback |
-
-**Create session example:**
-```json
-POST /api/sessions
-Authorization: Bearer <mentor-token>
-{
-  "skillId": "uuid-of-skill",
-  "title": "Introduction to TypeScript",
-  "description": "First session on TypeScript basics",
-  "scheduledAt": "2025-03-01T14:00:00.000Z",
-  "duration": 60
-}
-```
-
-**Session status transitions:**
-```
-PENDING → SCHEDULED | CANCELLED
-SCHEDULED → COMPLETED | CANCELLED
-```
-
-### Admin
-
-| Method | Endpoint | Access | Description |
-|--------|----------|--------|-------------|
-| GET | `/api/admin/dashboard` | Admin | Platform statistics |
-| GET | `/api/admin/activity?days=30` | Admin | Activity metrics |
+Key enums: `Role` (`ADMIN`/`MENTOR`/`LEARNER`), `MentorStatus` (`NONE`/`PENDING`/`APPROVED`/`REJECTED`), `SessionStatus`, `BookingRequestStatus`, `CreditTxnType`, `ReportReason`, `ReportStatus`. Users, skills and sessions are **soft-deleted** (`deletedAt`) so history is preserved and FK constraints are never violated.
 
 ---
 
 ## Testing
 
+**Unit tests** (mocked Prisma, no DB) — the default suite, safe in CI:
+
 ```bash
-# Run all tests
-npm test
-
-# Watch mode
-npm test -- --watch
-
-# Coverage report
-npm run test:coverage
+npm run test:run
 ```
 
-Tests cover:
-- JWT token generation and verification
-- Auth service (register, login)
-- Skill service (CRUD, ownership checks)
-- Response utility helpers
+**Integration tests** (Supertest against a **real** PostgreSQL) — gated behind `RUN_INTEGRATION`, run sequentially, and clean up everything they create:
+
+```bash
+npm run test:integration
+```
+
+Integration coverage focuses on critical paths: the register → login → refresh → reuse-detection flow, account lockout, RBAC enforcement, the concurrent-booking race condition (exactly one winner), insufficient-credit rejection (no partial ledger row), and pagination clamping.
+
+> Point `DATABASE_URL` at a disposable database before running integration tests. Rate limiters are bypassed during the run (`DISABLE_RATE_LIMIT=true`) so the DB-backed lockout logic can be tested deterministically.
 
 ---
 
-## Docker
-
-### Development with Docker Compose
-
-```bash
-# Start database + app
-docker-compose up -d
-
-# View logs
-docker-compose logs -f app
-
-# Stop
-docker-compose down
-```
-
-### Build Docker image
-
-```bash
-docker build -t skillswap-backend .
-docker run -p 3000:3000 --env-file .env skillswap-backend
-```
-
----
-
-## Architecture
-
-### Authentication Flow
+## Project layout
 
 ```
-Client → POST /api/auth/login
-       → Returns: { accessToken, refreshToken }
-       
-Client → GET /api/... + Authorization: Bearer <accessToken>
-       → Middleware verifies token → Attaches user to req
-       
-Client → POST /api/auth/refresh + { refreshToken }
-       → Old token revoked → New pair issued (rotation)
+src/
+  app.ts            # Express app: middleware, routes, docs
+  server.ts         # Bootstrap: DB connect, cron, graceful shutdown
+  config/           # Env parsing/validation
+  docs/             # OpenAPI generation + Swagger mount
+  jobs/             # Scheduled job runners + node-cron scheduler
+  middleware/       # auth, rate limiting, audit log, cron auth, errors
+  modules/          # Feature modules (routes/controller/service/schema)
+    auth/ users/ skills/ sessions/ bookings/ availability/
+    mentors/ credits/ notifications/ reports/ admin/ internal/
+  services/         # Cross-cutting services (credit, notification, email)
+  utils/            # cache, errors, jwt, crypto, response, prisma-filters
+  prisma/           # Prisma client + seed
+  tests/            # Unit tests + tests/integration/ (Supertest)
+prisma/             # schema.prisma + migrations
+vercel.json         # Vercel Cron schedule
 ```
-
-### RBAC Permission Matrix
-
-| Endpoint Type | Admin | Mentor | Learner |
-|---------------|-------|--------|---------|
-| User management | ✅ Full | ❌ | ❌ |
-| Create skills | ✅ | ✅ | ❌ |
-| Update own skills | ✅ Any | ✅ Own | ❌ |
-| Create sessions | ✅ | ✅ | ❌ |
-| Book sessions | ❌ | ❌ | ✅ |
-| Admin dashboard | ✅ | ❌ | ❌ |
-
-### Data Model
-
-```
-User ──< Session (as mentor) >── Skill
-     ──< Session (as learner)
-     ──< RefreshToken
-     ──< Feedback (as learner)
-
-Session ──< Feedback (1:1)
-Skill ──< Session
-```
-
----
-
-## Security Practices
-
-- Passwords hashed with bcrypt (12 salt rounds)
-- JWT secrets validated to be at least 32 characters
-- Refresh token rotation on every use
-- Token revocation on logout
-- Helmet sets security headers
-- CORS configured
-- No sensitive data in logs
-- Environment validation at startup

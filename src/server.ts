@@ -2,6 +2,7 @@ import app from './app';
 import { config } from './config';
 import { prisma } from './prisma/client';
 import { logger } from './utils/logger';
+import { startScheduledJobs } from './jobs';
 
 const PORT = config.port;
 
@@ -10,6 +11,12 @@ async function startServer() {
     // Test DB connection
     await prisma.$connect();
     logger.info('✅ Database connected successfully');
+
+    // In-process scheduler for local/single-instance runs. On serverless this is
+    // disabled (config.enableCron=false) and jobs run via the HTTP cron endpoints.
+    if (config.enableCron) {
+      startScheduledJobs();
+    }
 
     const server = app.listen(PORT, () => {
       logger.info(`🚀 SkillSwap server running on http://localhost:${PORT}`);

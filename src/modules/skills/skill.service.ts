@@ -1,15 +1,18 @@
 import { prisma } from '../../prisma/client';
 import { NotFoundError, ForbiddenError } from '../../utils/errors';
 import { notDeleted } from '../../utils/prisma-filters';
+import { cache, CacheKeys, DEFAULT_TTL_MS } from '../../utils/cache';
 import { CreateSkillDto, UpdateSkillDto, SkillQueryDto } from './skill.schema';
 import { Prisma, Role } from '@prisma/client';
 
 export class SkillService {
   async createSkill(userId: string, dto: CreateSkillDto) {
-    return prisma.skill.create({
+    const skill = await prisma.skill.create({
       data: { ...dto, createdById: userId },
       include: { createdBy: { select: { id: true, name: true, email: true } } },
     });
+    cache.del(CacheKeys.skillCategories);
+    return skill;
   }
 
   async getAllSkills(query: SkillQueryDto) {
@@ -69,11 +72,14 @@ export class SkillService {
       throw new ForbiddenError('You can only update your own skills');
     }
 
-    return prisma.skill.update({
+    const updated = await prisma.skill.update({
       where: { id: skillId },
       data: dto,
       include: { createdBy: { select: { id: true, name: true } } },
     });
+    // Category may have changed; bust the categories cache.
+    cache.del(CacheKeys.skillCategories);
+    return updated;
   }
 
   async deleteSkill(skillId: string, userId: string, userRole: Role) {
@@ -84,20 +90,24 @@ export class SkillService {
       throw new ForbiddenError('You can only delete your own skills');
     }
 
-    return prisma.skill.update({
+    const deleted = await prisma.skill.update({
       where: { id: skillId },
       data: { isActive: false, deletedAt: new Date() },
     });
+    cache.del(CacheKeys.skillCategories);
+    return deleted;
   }
 
   async getCategories() {
-    const categories = await prisma.skill.findMany({
-      where: { ...notDeleted, isActive: true },
-      select: { category: true },
-      distinct: ['category'],
-      orderBy: { category: 'asc' },
+    return cache.wrap(CacheKeys.skillCategories, DEFAULT_TTL_MS, async () => {
+      const categories = await prisma.skill.findMany({
+        where: { ...notDeleted, isActive: true },
+        select: { category: true },
+        distinct: ['category'],
+        orderBy: { category: 'asc' },
+      });
+      return categories.map((c) => c.category);
     });
-    return categories.map((c) => c.category);
   }
 }
 

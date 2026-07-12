@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    name: Lint · Type-check · Test
+    runs-on: ubuntu-latest
+
+    env:
+      # Dummy DATABASE_URL so `prisma validate` (config reads env) and the
+      # config loader are satisfied. Unit tests mock Prisma and never connect.
+      DATABASE_URL: postgresql://user:password@localhost:5432/skillswap?schema=public
+      JWT_ACCESS_SECRET: ci_access_secret_minimum_32_chars_long_xyz
+      JWT_REFRESH_SECRET: ci_refresh_secret_minimum_32_chars_long_xyz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Validate Prisma schema
+        run: npx prisma validate --config src/config/prisma.config.ts
+
+      - name: Run tests
+        run: npm run test:run

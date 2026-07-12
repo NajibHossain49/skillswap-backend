@@ -1,16 +1,9 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "dist/server.js",
-      "use": "@vercel/node",
-      "config": { "includeFiles": ["dist/**"] }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "dist/server.js"
-    }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/internal/cron/cleanupExpiredTokens", "schedule": "0 3 * * *" },
+    { "path": "/api/internal/cron/sessionReminders", "schedule": "*/15 * * * *" },
+    { "path": "/api/internal/cron/autoCompleteSessions", "schedule": "0 * * * *" },
+    { "path": "/api/internal/cron/expireStaleBookings", "schedule": "0 * * * *" }
   ]
 }

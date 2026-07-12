@@ -16,6 +16,22 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().optional(),
   APP_URL: z.string().default('http://localhost:3001'),
   BCRYPT_ROUNDS: z.coerce.number().default(12),
+  // Shared secret required to invoke the internal cron endpoints (Vercel Cron).
+  CRON_SECRET: z.string().optional(),
+  // Run node-cron in this process. Enabled by default outside production; on
+  // serverless (Vercel) leave this off and drive jobs via the HTTP endpoints.
+  ENABLE_CRON: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
+  // Expose Swagger UI. Always on in dev; in production requires this flag.
+  ENABLE_DOCS: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
+  // Optional HTTP Basic Auth for the docs in production.
+  DOCS_USER: z.string().optional(),
+  DOCS_PASSWORD: z.string().optional(),
 });
 
 const parseResult = envSchema.safeParse(process.env);
@@ -47,4 +63,13 @@ export const config = {
   },
   appUrl: parseResult.data.APP_URL,
   bcryptRounds: parseResult.data.BCRYPT_ROUNDS,
+  cronSecret: parseResult.data.CRON_SECRET,
+  // node-cron runs in-process everywhere except production unless explicitly enabled.
+  enableCron: parseResult.data.ENABLE_CRON ?? parseResult.data.NODE_ENV !== 'production',
+  docs: {
+    // Docs are open in non-production; production requires ENABLE_DOCS=true.
+    enabled: parseResult.data.ENABLE_DOCS ?? parseResult.data.NODE_ENV !== 'production',
+    user: parseResult.data.DOCS_USER,
+    password: parseResult.data.DOCS_PASSWORD,
+  },
 } as const;
