@@ -11,6 +11,7 @@ vi.mock('../prisma/client', () => {
   const mockPrisma = {
     user: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
       update: vi.fn(),
@@ -61,19 +62,19 @@ describe('UserService', () => {
   // ────────────────────────────────────────────────
   describe('getProfile', () => {
     it('returns selected fields when user exists', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
 
       const result = await userService.getProfile('u-123');
 
       expect(result).toEqual(mockUser);
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
-        where: { id: 'u-123' },
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: 'u-123', deletedAt: null },
         select: USER_SELECT,
       });
     });
 
     it('throws NotFoundError when user does not exist', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
 
       await expect(userService.getProfile('ghost')).rejects.toThrow(
         new NotFoundError('User not found'),
@@ -88,7 +89,7 @@ describe('UserService', () => {
     const updateData = { name: 'New Name', bio: 'Updated bio' };
 
     it('updates user and returns new data', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
       mockPrisma.user.update.mockResolvedValue({ ...mockUser, ...updateData });
 
       const result = await userService.updateProfile('u-123', updateData);
@@ -103,13 +104,13 @@ describe('UserService', () => {
     });
 
     it('throws NotFound when user does not exist', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
 
       await expect(userService.updateProfile('ghost', updateData)).rejects.toThrow(NotFoundError);
     });
 
     it('allows partial update (only name)', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
       mockPrisma.user.update.mockResolvedValue({ ...mockUser, name: 'Only Name' });
 
       const result = await userService.updateProfile('u-123', { name: 'Only Name' });
@@ -158,7 +159,7 @@ describe('UserService', () => {
 
       expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { role: 'MENTOR' },
+          where: { deletedAt: null, role: 'MENTOR' },
         }),
       );
     });
@@ -172,6 +173,7 @@ describe('UserService', () => {
       expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
+            deletedAt: null,
             OR: [
               { name: { contains: 'exa', mode: 'insensitive' } },
               { email: { contains: 'exa', mode: 'insensitive' } },
@@ -190,6 +192,7 @@ describe('UserService', () => {
       expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
+            deletedAt: null,
             role: 'ADMIN',
             OR: [
               { name: { contains: 'john', mode: 'insensitive' } },
@@ -228,7 +231,7 @@ describe('UserService', () => {
   // ────────────────────────────────────────────────
   describe('getUserById', () => {
     it('returns user when exists', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
 
       const result = await userService.getUserById('u-123');
 
@@ -236,7 +239,7 @@ describe('UserService', () => {
     });
 
     it('throws NotFoundError when user missing', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
 
       await expect(userService.getUserById('missing')).rejects.toThrow(NotFoundError);
     });
@@ -247,7 +250,7 @@ describe('UserService', () => {
   // ────────────────────────────────────────────────
   describe('updateUserRole', () => {
     it('updates role successfully', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
       mockPrisma.user.update.mockResolvedValue({ ...mockUser, role: Role.MENTOR });
 
       const result = await userService.updateUserRole('u-123', { role: 'MENTOR' });
@@ -256,7 +259,7 @@ describe('UserService', () => {
     });
 
     it('throws when target user not found', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
 
       await expect(userService.updateUserRole('ghost', { role: 'ADMIN' })).rejects.toThrow(
         NotFoundError,
@@ -269,7 +272,7 @@ describe('UserService', () => {
   // ────────────────────────────────────────────────
   describe('deactivateUser', () => {
     it('sets isActive=false and revokes all active refresh tokens', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
       mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 4 });
       mockPrisma.user.update.mockResolvedValue({ ...mockUser, isActive: false });
 
@@ -283,7 +286,7 @@ describe('UserService', () => {
     });
 
     it('still succeeds even if no refresh tokens exist', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
       mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
       mockPrisma.user.update.mockResolvedValue({ ...mockUser, isActive: false });
 
@@ -293,7 +296,7 @@ describe('UserService', () => {
     });
 
     it('throws when user not found', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
 
       await expect(userService.deactivateUser('ghost')).rejects.toThrow(NotFoundError);
     });
@@ -305,7 +308,7 @@ describe('UserService', () => {
   describe('activateUser', () => {
     it('sets isActive=true', async () => {
       const inactiveUser = { ...mockUser, isActive: false };
-      mockPrisma.user.findUnique.mockResolvedValue(inactiveUser);
+      mockPrisma.user.findFirst.mockResolvedValue(inactiveUser);
       mockPrisma.user.update.mockResolvedValue({ ...inactiveUser, isActive: true });
 
       const result = await userService.activateUser('u-123');
@@ -314,7 +317,7 @@ describe('UserService', () => {
     });
 
     it('throws when user not found', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
 
       await expect(userService.activateUser('ghost')).rejects.toThrow(NotFoundError);
     });
@@ -324,18 +327,33 @@ describe('UserService', () => {
   // deleteUser
   // ────────────────────────────────────────────────
   describe('deleteUser', () => {
-    it('deletes user and returns success message', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser);
-      mockPrisma.user.delete.mockResolvedValue({} as any); // delete returns the deleted record by default
+    it('soft-deletes: sets deletedAt, deactivates, anonymizes email, blanks bio, revokes tokens', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 2 });
+      mockPrisma.user.update.mockResolvedValue({} as any);
 
       const result = await userService.deleteUser('u-123');
 
       expect(result).toEqual({ message: 'User deleted successfully' });
-      expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: 'u-123' } });
+
+      // Never a hard delete — that would violate the required Session.mentorId FK.
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled();
+
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'u-123', isRevoked: false },
+        data: { isRevoked: true },
+      });
+
+      const updateArg = mockPrisma.user.update.mock.calls[0][0];
+      expect(updateArg.where).toEqual({ id: 'u-123' });
+      expect(updateArg.data.isActive).toBe(false);
+      expect(updateArg.data.deletedAt).toBeInstanceOf(Date);
+      expect(updateArg.data.bio).toBeNull();
+      expect(updateArg.data.email).toMatch(/^deleted-.+@skillswap\.local$/);
     });
 
     it('throws when user not found', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
 
       await expect(userService.deleteUser('ghost')).rejects.toThrow(NotFoundError);
     });

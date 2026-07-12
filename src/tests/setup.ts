@@ -22,9 +22,11 @@ vi.mock('../prisma/client', () => {
       delete: vi.fn(),
       count: vi.fn(),
       groupBy: vi.fn(),
+      aggregate: vi.fn(),
     },
     skill: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock('../prisma/client', () => {
     },
     session: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -52,6 +55,19 @@ vi.mock('../prisma/client', () => {
       create: vi.fn(),
       count: vi.fn(),
       aggregate: vi.fn(),
+    },
+    report: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+    },
+    auditLog: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+      count: vi.fn(),
     },
     refreshToken: {
       findUnique: vi.fn(),

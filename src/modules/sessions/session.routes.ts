@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { sessionController } from './session.controller';
-import { authenticate, authorize } from '../../middleware/auth';
+import { authenticate, authorize, requireApprovedMentor } from '../../middleware/auth';
 import { validate, validateQuery } from '../../middleware/validate';
 import {
   createSessionSchema,
@@ -40,6 +40,7 @@ router.get(
 router.post(
   '/',
   authorize('MENTOR', 'ADMIN'),
+  requireApprovedMentor,
   validate(createSessionSchema),
   sessionController.createSession.bind(sessionController),
 );

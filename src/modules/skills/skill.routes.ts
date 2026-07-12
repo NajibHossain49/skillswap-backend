@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { skillController } from './skill.controller';
-import { authenticate, authorize } from '../../middleware/auth';
+import { authenticate, authorize, requireApprovedMentor } from '../../middleware/auth';
 import { validate, validateQuery } from '../../middleware/validate';
 import { createSkillSchema, updateSkillSchema, skillQuerySchema } from './skill.schema';
 
@@ -40,6 +40,7 @@ router.post(
   '/',
   authenticate,
   authorize('MENTOR', 'ADMIN'),
+  requireApprovedMentor,
   validate(createSkillSchema),
   skillController.createSkill.bind(skillController),
 );

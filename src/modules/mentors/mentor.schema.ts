@@ -26,5 +26,28 @@ export const mentorReviewsQuerySchema = z.object({
     .transform((v) => Math.min(Math.max(parseInt(v, 10) || 20, 1), 100)),
 });
 
+export const applyMentorSchema = z.object({
+  headline: z.string().min(3, 'Headline must be at least 3 characters').max(120),
+  experience: z.string().min(20, 'Tell us about your experience (min 20 characters)').max(2000),
+  linkedinUrl: z.string().url('Invalid URL').max(300).optional(),
+});
+
+export const mentorApplicationQuerySchema = z.object({
+  page: z.string().default('1').transform((v) => Math.max(parseInt(v, 10) || 1, 1)),
+  limit: z
+    .string()
+    .default('20')
+    .transform((v) => Math.min(Math.max(parseInt(v, 10) || 20, 1), 100)),
+  status: z.enum(['NONE', 'PENDING', 'APPROVED', 'REJECTED']).default('PENDING'),
+});
+
+export const reviewApplicationSchema = z.object({
+  status: z.enum(['APPROVED', 'REJECTED']),
+  note: z.string().max(1000).optional(),
+});
+
 export type MentorQueryDto = z.infer<typeof mentorQuerySchema>;
 export type MentorReviewsQueryDto = z.infer<typeof mentorReviewsQuerySchema>;
+export type ApplyMentorDto = z.infer<typeof applyMentorSchema>;
+export type MentorApplicationQueryDto = z.infer<typeof mentorApplicationQuerySchema>;
+export type ReviewApplicationDto = z.infer<typeof reviewApplicationSchema>;

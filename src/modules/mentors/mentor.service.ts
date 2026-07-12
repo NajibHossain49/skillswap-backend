@@ -1,7 +1,32 @@
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, Role, MentorStatus, NotificationType } from '@prisma/client';
 import { prisma } from '../../prisma/client';
-import { NotFoundError } from '../../utils/errors';
-import { MentorQueryDto, MentorReviewsQueryDto } from './mentor.schema';
+import { NotFoundError, ConflictError, ValidationError } from '../../utils/errors';
+import { notDeleted } from '../../utils/prisma-filters';
+import { logger } from '../../utils/logger';
+import { config } from '../../config';
+import { notificationService } from '../../services/notification.service';
+import {
+  MentorQueryDto,
+  MentorReviewsQueryDto,
+  ApplyMentorDto,
+  MentorApplicationQueryDto,
+  ReviewApplicationDto,
+} from './mentor.schema';
+
+// Fields returned when an admin reviews mentor applications.
+const APPLICATION_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  avatarUrl: true,
+  bio: true,
+  headline: true,
+  location: true,
+  mentorStatus: true,
+  mentorExperience: true,
+  mentorLinkedinUrl: true,
+  createdAt: true,
+} satisfies Prisma.UserSelect;
 
 // Public projection of a mentor — deliberately omits email, password and every
 // other sensitive/internal field.
@@ -16,7 +41,7 @@ const MENTOR_PUBLIC_SELECT = {
   ratingCount: true,
   totalSessionsTaught: true,
   createdSkills: {
-    where: { isActive: true },
+    where: { isActive: true, deletedAt: null },
     select: { id: true, title: true, category: true, level: true },
     orderBy: { createdAt: 'desc' as const },
   },
@@ -41,6 +66,7 @@ export class MentorService {
         createdSkills: {
           some: {
             isActive: true,
+            deletedAt: null,
             category: { equals: query.category, mode: 'insensitive' },
           },
         },
@@ -129,6 +155,95 @@ export class MentorService {
       reviews,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  async applyAsMentor(userId: string, dto: ApplyMentorDto) {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, ...notDeleted },
+      select: { id: true, role: true, mentorStatus: true },
+    });
+    if (!user) throw new NotFoundError('User not found');
+    if (user.role === Role.ADMIN) {
+      throw new ValidationError('Admins do not need to apply as mentors');
+    }
+    if (user.mentorStatus === MentorStatus.PENDING) {
+      throw new ConflictError('You already have a pending mentor application');
+    }
+    if (user.mentorStatus === MentorStatus.APPROVED) {
+      throw new ConflictError('You are already an approved mentor');
+    }
+
+    return prisma.user.update({
+      where: { id: userId },
+      data: {
+        headline: dto.headline,
+        mentorExperience: dto.experience,
+        mentorLinkedinUrl: dto.linkedinUrl ?? null,
+        mentorStatus: MentorStatus.PENDING,
+      },
+      select: APPLICATION_SELECT,
+    });
+  }
+
+  async getMentorApplications(query: MentorApplicationQueryDto) {
+    const { page, limit, status } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.UserWhereInput = { ...notDeleted, mentorStatus: status };
+
+    const [applications, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        select: APPLICATION_SELECT,
+        skip,
+        take: limit,
+        orderBy: { updatedAt: 'desc' },
+      }),
+      prisma.user.count({ where }),
+    ]);
+
+    return {
+      applications,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async reviewMentorApplication(userId: string, dto: ReviewApplicationDto) {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, ...notDeleted },
+      select: { id: true, name: true, mentorStatus: true },
+    });
+    if (!user) throw new NotFoundError('User not found');
+    if (user.mentorStatus !== MentorStatus.PENDING) {
+      throw new ValidationError('This user has no pending mentor application');
+    }
+
+    const approved = dto.status === 'APPROVED';
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        mentorStatus: approved ? MentorStatus.APPROVED : MentorStatus.REJECTED,
+        ...(approved && { role: Role.MENTOR }),
+      },
+      select: APPLICATION_SELECT,
+    });
+
+    const link = `${config.appUrl}/dashboard`;
+    void notificationService
+      .notify({
+        userId,
+        type: approved ? NotificationType.MENTOR_APPROVED : NotificationType.SYSTEM,
+        title: approved ? 'Mentor application approved' : 'Mentor application declined',
+        body: approved
+          ? 'Congratulations! You can now create skills and host sessions.'
+          : `Your mentor application was not approved.${dto.note ? ` Note: ${dto.note}` : ''}`,
+        link,
+        metadata: { mentorStatus: updated.mentorStatus, note: dto.note ?? null },
+      })
+      .catch((err) => logger.error({ msg: 'Failed to send mentor application notification', err }));
+
+    return updated;
   }
 }
 

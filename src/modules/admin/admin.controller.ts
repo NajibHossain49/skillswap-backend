@@ -21,6 +21,15 @@ export class AdminController {
       next(err);
     }
   }
+
+  async getAuditLogs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await adminService.getAuditLogs(req.query as any);
+      sendSuccess(res, result, 'Audit logs retrieved');
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const adminController = new AdminController();

@@ -1,5 +1,6 @@
 import { prisma } from '../../prisma/client';
 import { NotFoundError, ForbiddenError } from '../../utils/errors';
+import { notDeleted } from '../../utils/prisma-filters';
 import { CreateSkillDto, UpdateSkillDto, SkillQueryDto } from './skill.schema';
 import { Prisma, Role } from '@prisma/client';
 
@@ -16,6 +17,7 @@ export class SkillService {
     const skip = (page - 1) * limit;
 
     const where: Prisma.SkillWhereInput = {
+      ...notDeleted,
       isActive: true,
       ...(category && { category: { equals: category, mode: 'insensitive' as const } }),
       ...(level && { level }),
@@ -48,8 +50,8 @@ export class SkillService {
   }
 
   async getSkillById(skillId: string) {
-    const skill = await prisma.skill.findUnique({
-      where: { id: skillId },
+    const skill = await prisma.skill.findFirst({
+      where: { id: skillId, ...notDeleted },
       include: {
         createdBy: { select: { id: true, name: true, email: true } },
         _count: { select: { sessions: true } },
@@ -60,7 +62,7 @@ export class SkillService {
   }
 
   async updateSkill(skillId: string, userId: string, userRole: Role, dto: UpdateSkillDto) {
-    const skill = await prisma.skill.findUnique({ where: { id: skillId } });
+    const skill = await prisma.skill.findFirst({ where: { id: skillId, ...notDeleted } });
     if (!skill || !skill.isActive) throw new NotFoundError('Skill not found');
 
     if (userRole !== 'ADMIN' && skill.createdById !== userId) {
@@ -75,7 +77,7 @@ export class SkillService {
   }
 
   async deleteSkill(skillId: string, userId: string, userRole: Role) {
-    const skill = await prisma.skill.findUnique({ where: { id: skillId } });
+    const skill = await prisma.skill.findFirst({ where: { id: skillId, ...notDeleted } });
     if (!skill || !skill.isActive) throw new NotFoundError('Skill not found');
 
     if (userRole !== 'ADMIN' && skill.createdById !== userId) {
@@ -84,13 +86,13 @@ export class SkillService {
 
     return prisma.skill.update({
       where: { id: skillId },
-      data: { isActive: false },
+      data: { isActive: false, deletedAt: new Date() },
     });
   }
 
   async getCategories() {
     const categories = await prisma.skill.findMany({
-      where: { isActive: true },
+      where: { ...notDeleted, isActive: true },
       select: { category: true },
       distinct: ['category'],
       orderBy: { category: 'asc' },

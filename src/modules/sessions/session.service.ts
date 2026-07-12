@@ -9,6 +9,7 @@ import { logger } from '../../utils/logger';
 import { config } from '../../config';
 import { notificationService } from '../../services/notification.service';
 import { creditService } from '../../services/credit.service';
+import { notDeleted } from '../../utils/prisma-filters';
 import { sessionBookedEmail, sessionCancelledEmail } from '../../services/email.service';
 import {
   CreateSessionDto,
@@ -30,7 +31,9 @@ const jitsiLink = (sessionId: string): string => `https://meet.jit.si/skillswap-
 
 export class SessionService {
   async createSession(mentorId: string, dto: CreateSessionDto) {
-    const skill = await prisma.skill.findUnique({ where: { id: dto.skillId, isActive: true } });
+    const skill = await prisma.skill.findFirst({
+      where: { id: dto.skillId, isActive: true, ...notDeleted },
+    });
     if (!skill) throw new NotFoundError('Skill not found');
 
     const scheduledAt = new Date(dto.scheduledAt);
@@ -63,6 +66,7 @@ export class SessionService {
 
     const candidates = await prisma.session.findMany({
       where: {
+        ...notDeleted,
         mentorId,
         status: { in: ['SCHEDULED', 'PENDING'] },
         scheduledAt: { gte: lookback, lt: new Date(endMs) },
@@ -82,6 +86,7 @@ export class SessionService {
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {
+      ...notDeleted,
       ...(status && { status }),
       ...(mentorId && { mentorId }),
       ...(skillId && { skillId }),
@@ -109,8 +114,8 @@ export class SessionService {
   }
 
   async getSessionById(sessionId: string, userId: string, userRole: Role) {
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, ...notDeleted },
       include: SESSION_INCLUDE,
     });
     if (!session) throw new NotFoundError('Session not found');
@@ -145,8 +150,8 @@ export class SessionService {
   }
 
   async bookSession(sessionId: string, learnerId: string) {
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, ...notDeleted },
       include: { skill: { select: { creditCost: true } } },
     });
     if (!session) throw new NotFoundError('Session not found');
@@ -156,8 +161,8 @@ export class SessionService {
 
     // Fail fast with a clear 400 before we attempt to claim the slot so the
     // learner is not told the slot is taken when the real problem is credits.
-    const learner = await prisma.user.findUnique({
-      where: { id: learnerId },
+    const learner = await prisma.user.findFirst({
+      where: { id: learnerId, ...notDeleted },
       select: { creditBalance: true },
     });
     if (!learner) throw new NotFoundError('User not found');
@@ -229,7 +234,7 @@ export class SessionService {
     userRole: Role,
     dto: UpdateSessionStatusDto,
   ) {
-    const session = await prisma.session.findUnique({ where: { id: sessionId } });
+    const session = await prisma.session.findFirst({ where: { id: sessionId, ...notDeleted } });
     if (!session) throw new NotFoundError('Session not found');
 
     // Role-based status update checks
@@ -370,8 +375,8 @@ export class SessionService {
   }
 
   async addFeedback(sessionId: string, learnerId: string, dto: CreateFeedbackDto) {
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, ...notDeleted },
       include: {
         feedback: true,
         mentor: { select: { id: true, name: true, email: true } },
@@ -441,14 +446,14 @@ export class SessionService {
 
   async getMentorStats(mentorId: string) {
     const [total, byStatus, avgRating] = await Promise.all([
-      prisma.session.count({ where: { mentorId } }),
+      prisma.session.count({ where: { mentorId, ...notDeleted } }),
       prisma.session.groupBy({
         by: ['status'],
-        where: { mentorId },
+        where: { mentorId, ...notDeleted },
         _count: { status: true },
       }),
       prisma.feedback.aggregate({
-        where: { session: { mentorId } },
+        where: { session: { mentorId, ...notDeleted } },
         _avg: { rating: true },
         _count: { rating: true },
       }),

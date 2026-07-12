@@ -5,6 +5,7 @@ import { logger } from '../../utils/logger';
 import { config } from '../../config';
 import { notificationService } from '../../services/notification.service';
 import { creditService } from '../../services/credit.service';
+import { notDeleted } from '../../utils/prisma-filters';
 import { CreateBookingDto, RejectBookingDto, BookingQueryDto } from './booking.schema';
 
 // Max session length (minutes) — bounds how far back we look for overlaps.
@@ -30,10 +31,12 @@ export class BookingService {
       throw new ValidationError('You cannot request a session with yourself');
     }
 
-    const skill = await prisma.skill.findFirst({ where: { id: dto.skillId, isActive: true } });
+    const skill = await prisma.skill.findFirst({
+      where: { id: dto.skillId, isActive: true, ...notDeleted },
+    });
     if (!skill) throw new NotFoundError('Skill not found');
 
-    const mentor = await prisma.user.findUnique({ where: { id: dto.mentorId } });
+    const mentor = await prisma.user.findFirst({ where: { id: dto.mentorId, ...notDeleted } });
     if (!mentor || mentor.role !== Role.MENTOR || !mentor.isActive) {
       throw new NotFoundError('Mentor not found');
     }
@@ -153,8 +156,8 @@ export class BookingService {
 
     // Fail fast with a clear 400 if the learner can no longer afford the session
     // before we spin up a scheduled session for them.
-    const learner = await prisma.user.findUnique({
-      where: { id: request.learnerId },
+    const learner = await prisma.user.findFirst({
+      where: { id: request.learnerId, ...notDeleted },
       select: { creditBalance: true },
     });
     if (!learner) throw new NotFoundError('Learner not found');

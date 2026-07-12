@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { userController } from './user.controller';
 import { authenticate, authorize } from '../../middleware/auth';
 import { validate, validateQuery } from '../../middleware/validate';
+import { audit } from '../../middleware/auditLog';
 import { updateProfileSchema, updateUserRoleSchema, userQuerySchema } from './user.schema';
 
 const router = Router();
@@ -55,6 +56,7 @@ router.patch(
   '/:id/role',
   authorize('ADMIN'),
   validate(updateUserRoleSchema),
+  audit('user.role_change', 'User'),
   userController.updateUserRole.bind(userController),
 );
 
@@ -66,6 +68,7 @@ router.patch(
 router.patch(
   '/:id/deactivate',
   authorize('ADMIN'),
+  audit('user.deactivate', 'User'),
   userController.deactivateUser.bind(userController),
 );
 
@@ -77,6 +80,7 @@ router.patch(
 router.patch(
   '/:id/activate',
   authorize('ADMIN'),
+  audit('user.activate', 'User'),
   userController.activateUser.bind(userController),
 );
 
@@ -85,6 +89,11 @@ router.patch(
  * @desc    Delete user (Admin only)
  * @access  Admin
  */
-router.delete('/:id', authorize('ADMIN'), userController.deleteUser.bind(userController));
+router.delete(
+  '/:id',
+  authorize('ADMIN'),
+  audit('user.delete', 'User'),
+  userController.deleteUser.bind(userController),
+);
 
 export default router;

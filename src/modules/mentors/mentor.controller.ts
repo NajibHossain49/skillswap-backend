@@ -32,6 +32,36 @@ export class MentorController {
       next(err);
     }
   }
+
+  async apply(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await mentorService.applyAsMentor(req.user!.sub, req.body);
+      sendSuccess(res, result, 'Mentor application submitted');
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async getApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await mentorService.getMentorApplications(req.query as any);
+      sendSuccess(res, result, 'Mentor applications retrieved');
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async reviewApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await mentorService.reviewMentorApplication(
+        req.params.userId as string,
+        req.body,
+      );
+      sendSuccess(res, result, 'Mentor application reviewed');
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const mentorController = new MentorController();

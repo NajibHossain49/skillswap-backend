@@ -1,5 +1,6 @@
 import { prisma } from '../../prisma/client';
 import { NotFoundError, ForbiddenError, ConflictError, ValidationError } from '../../utils/errors';
+import { notDeleted } from '../../utils/prisma-filters';
 import { CreateAvailabilityDto, UpdateAvailabilityDto } from './availability.schema';
 
 // Bookable slots are expanded at this granularity (minutes).
@@ -24,7 +25,7 @@ export class AvailabilityService {
 
   async getMentorAvailability(mentorId: string) {
     const mentor = await prisma.user.findFirst({
-      where: { id: mentorId, role: 'MENTOR', isActive: true },
+      where: { id: mentorId, role: 'MENTOR', isActive: true, ...notDeleted },
       select: { id: true },
     });
     if (!mentor) throw new NotFoundError('Mentor not found');
@@ -106,7 +107,12 @@ export class AvailabilityService {
         orderBy: { startTime: 'asc' },
       }),
       prisma.session.findMany({
-        where: { mentorId, status: 'SCHEDULED', scheduledAt: { gte: dayStart, lt: dayEnd } },
+        where: {
+          ...notDeleted,
+          mentorId,
+          status: 'SCHEDULED',
+          scheduledAt: { gte: dayStart, lt: dayEnd },
+        },
         select: { scheduledAt: true, duration: true },
       }),
     ]);

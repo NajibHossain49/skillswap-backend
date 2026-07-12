@@ -1,4 +1,4 @@
-import { Role, SessionStatus } from '@prisma/client';
+import { Role, SessionStatus, MentorStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { prisma } from './client';
 
@@ -234,6 +234,8 @@ async function main() {
         ratingAvg: ratingAgg._avg.rating ?? 0,
         ratingCount: ratingAgg._count.rating,
         totalSessionsTaught: taught,
+        // Seeded mentors are pre-approved so they pass the mentor-approval guard.
+        mentorStatus: MentorStatus.APPROVED,
       },
     });
   }

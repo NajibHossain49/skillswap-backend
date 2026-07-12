@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken, TokenPayload } from '../utils/jwt';
-import { UnauthorizedError } from '../utils/errors';
+import { UnauthorizedError, ForbiddenError } from '../utils/errors';
 import { prisma } from '../prisma/client';
 import { Role } from '@prisma/client';
 
@@ -56,8 +56,8 @@ export const strictAuth = async (
 
     const payload = verifyAccessToken(token);
 
-    const user = await prisma.user.findUnique({
-      where: { id: payload.sub },
+    const user = await prisma.user.findFirst({
+      where: { id: payload.sub, deletedAt: null },
       select: { tokenVersion: true, isActive: true },
     });
 
@@ -88,4 +88,36 @@ export const authorize = (...roles: Role[]) => {
 
     next();
   };
+};
+
+/**
+ * Gate mentor-only creation flows (skills, sessions) behind an approved mentor
+ * application. Admins bypass the check; everyone else must have been approved by
+ * an admin (mentorStatus === 'APPROVED'). Requires `authenticate` upstream.
+ */
+export const requireApprovedMentor = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      throw new UnauthorizedError('Not authenticated');
+    }
+    if (req.user.role === 'ADMIN') {
+      return next();
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { id: req.user.sub, deletedAt: null },
+      select: { mentorStatus: true },
+    });
+    if (!user || user.mentorStatus !== 'APPROVED') {
+      throw new ForbiddenError('Only approved mentors can perform this action');
+    }
+
+    next();
+  } catch (err) {
+    next(err);
+  }
 };

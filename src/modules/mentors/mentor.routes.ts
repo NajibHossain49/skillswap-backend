@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { mentorController } from './mentor.controller';
-import { validateQuery } from '../../middleware/validate';
-import { mentorQuerySchema, mentorReviewsQuerySchema } from './mentor.schema';
+import { authenticate } from '../../middleware/auth';
+import { validate, validateQuery } from '../../middleware/validate';
+import { mentorQuerySchema, mentorReviewsQuerySchema, applyMentorSchema } from './mentor.schema';
 
 const router = Router();
 
@@ -14,6 +15,18 @@ router.get(
   '/',
   validateQuery(mentorQuerySchema),
   mentorController.getMentors.bind(mentorController),
+);
+
+/**
+ * @route   POST /api/mentors/apply
+ * @desc    Apply to become a mentor (sets mentorStatus = PENDING)
+ * @access  Private
+ */
+router.post(
+  '/apply',
+  authenticate,
+  validate(applyMentorSchema),
+  mentorController.apply.bind(mentorController),
 );
 
 /**

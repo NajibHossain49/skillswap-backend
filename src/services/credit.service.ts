@@ -1,6 +1,7 @@
 import { Prisma, CreditTxnType, CreditTransaction } from '@prisma/client';
 import { prisma } from '../prisma/client';
 import { NotFoundError, ValidationError } from '../utils/errors';
+import { notDeleted } from '../utils/prisma-filters';
 
 export interface CreditTransferInput {
   userId: string;
@@ -76,8 +77,8 @@ export class CreditService {
   }
 
   async getBalance(userId: string): Promise<{ creditBalance: number }> {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
+    const user = await prisma.user.findFirst({
+      where: { id: userId, ...notDeleted },
       select: { creditBalance: true },
     });
     if (!user) throw new NotFoundError('User not found');

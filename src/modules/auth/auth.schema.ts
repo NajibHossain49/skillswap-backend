@@ -13,7 +13,9 @@ export const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: passwordSchema,
   bio: z.string().max(500).optional(),
-  role: z.enum(['MENTOR', 'LEARNER']).default('LEARNER'),
+  // Everyone registers as a LEARNER; becoming a MENTOR requires an admin-approved
+  // application (POST /api/mentors/apply). Self-assigning MENTOR is not allowed.
+  role: z.enum(['LEARNER']).default('LEARNER'),
 });
 
 export const loginSchema = z.object({

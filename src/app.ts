@@ -22,6 +22,7 @@ import notificationRoutes from './modules/notifications/notification.routes';
 import adminRoutes from './modules/admin/admin.routes';
 import creditRoutes from './modules/credits/credit.routes';
 import mentorRoutes from './modules/mentors/mentor.routes';
+import reportRoutes from './modules/reports/report.routes';
 
 const app: Application = express();
 
@@ -115,6 +116,7 @@ app.use(`${API_PREFIX}/bookings`, bookingRoutes);
 app.use(`${API_PREFIX}/notifications`, notificationRoutes);
 app.use(`${API_PREFIX}/mentors`, mentorRoutes);
 app.use(`${API_PREFIX}/credits`, creditRoutes);
+app.use(`${API_PREFIX}/reports`, reportRoutes);
 app.use(`${API_PREFIX}/admin`, adminRoutes);
 
 // 404 handler

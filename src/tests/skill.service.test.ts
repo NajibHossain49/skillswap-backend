@@ -43,7 +43,7 @@ describe('SkillService', () => {
 
   describe('getSkillById', () => {
     it('should return a skill when found', async () => {
-      vi.mocked(prisma.skill.findUnique).mockResolvedValue({
+      vi.mocked(prisma.skill.findFirst).mockResolvedValue({
         ...mockSkill,
         createdBy: { id: 'user-123', name: 'Jane', email: 'jane@test.com' },
         _count: { sessions: 2 },
@@ -54,14 +54,14 @@ describe('SkillService', () => {
     });
 
     it('should throw NotFoundError when skill not found', async () => {
-      vi.mocked(prisma.skill.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.skill.findFirst).mockResolvedValue(null);
       await expect(skillService.getSkillById('nonexistent')).rejects.toThrow(NotFoundError);
     });
   });
 
   describe('updateSkill', () => {
     it('should allow admin to update any skill', async () => {
-      vi.mocked(prisma.skill.findUnique).mockResolvedValue(mockSkill as any);
+      vi.mocked(prisma.skill.findFirst).mockResolvedValue(mockSkill as any);
       vi.mocked(prisma.skill.update).mockResolvedValue({ ...mockSkill, title: 'Updated' } as any);
 
       await skillService.updateSkill('skill-123', 'different-user', 'ADMIN' as Role, {
@@ -72,7 +72,7 @@ describe('SkillService', () => {
     });
 
     it('should throw ForbiddenError when mentor tries to update another mentor\'s skill', async () => {
-      vi.mocked(prisma.skill.findUnique).mockResolvedValue(mockSkill as any);
+      vi.mocked(prisma.skill.findFirst).mockResolvedValue(mockSkill as any);
 
       await expect(
         skillService.updateSkill('skill-123', 'different-user', 'MENTOR' as Role, {
