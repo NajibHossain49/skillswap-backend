@@ -40,6 +40,14 @@ enum NotificationType {
   SYSTEM
 }
 
+enum BookingRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
 model User {
   id                  String    @id @default(uuid())
   email               String    @unique
@@ -59,13 +67,16 @@ model User {
   updatedAt           DateTime  @updatedAt
 
   // Relations
-  mentorSessions     Session[]           @relation("MentorSessions")
-  learnerSessions    Session[]           @relation("LearnerSessions")
-  createdSkills      Skill[]             @relation("SkillCreator")
-  refreshTokens      RefreshToken[]
-  verificationTokens VerificationToken[]
-  notifications      Notification[]
-  feedbacks          Feedback[]          @relation("LearnerFeedback")
+  mentorSessions          Session[]           @relation("MentorSessions")
+  learnerSessions         Session[]           @relation("LearnerSessions")
+  createdSkills           Skill[]             @relation("SkillCreator")
+  refreshTokens           RefreshToken[]
+  verificationTokens      VerificationToken[]
+  notifications           Notification[]
+  feedbacks               Feedback[]          @relation("LearnerFeedback")
+  availabilities          Availability[]      @relation("MentorAvailability")
+  sentBookingRequests     BookingRequest[]    @relation("LearnerBookingRequests")
+  receivedBookingRequests BookingRequest[]    @relation("MentorBookingRequests")
 
   @@index([email])
   @@index([role, isActive])
@@ -132,31 +143,75 @@ model Skill {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  createdBy User      @relation("SkillCreator", fields: [createdById], references: [id])
-  sessions  Session[]
+  createdBy       User             @relation("SkillCreator", fields: [createdById], references: [id])
+  sessions        Session[]
+  bookingRequests BookingRequest[]
 
   @@map("skills")
 }
 
 model Session {
-  id          String        @id @default(uuid())
-  mentorId    String
-  learnerId   String?
-  skillId     String
-  title       String
-  description String?
-  scheduledAt DateTime
-  duration    Int           // minutes
-  status      SessionStatus @default(PENDING)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id           String        @id @default(uuid())
+  mentorId     String
+  learnerId    String?
+  skillId      String
+  title        String
+  description  String?
+  scheduledAt  DateTime
+  duration     Int           // minutes
+  status       SessionStatus @default(PENDING)
+  meetingLink  String?
+  cancelReason String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
-  mentor   User      @relation("MentorSessions", fields: [mentorId], references: [id])
-  learner  User?     @relation("LearnerSessions", fields: [learnerId], references: [id])
-  skill    Skill     @relation(fields: [skillId], references: [id])
-  feedback Feedback?
+  mentor         User            @relation("MentorSessions", fields: [mentorId], references: [id])
+  learner        User?           @relation("LearnerSessions", fields: [learnerId], references: [id])
+  skill          Skill           @relation(fields: [skillId], references: [id])
+  feedback       Feedback?
+  bookingRequest BookingRequest?
 
   @@map("sessions")
+}
+
+model Availability {
+  id        String   @id @default(uuid())
+  mentorId  String
+  dayOfWeek Int // 0=Sunday .. 6=Saturday
+  startTime String // "14:00" (24h, mentor's local time)
+  endTime   String // "17:00"
+  timezone  String   @default("Asia/Dhaka")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  mentor User @relation("MentorAvailability", fields: [mentorId], references: [id], onDelete: Cascade)
+
+  @@index([mentorId, dayOfWeek])
+  @@map("availabilities")
+}
+
+model BookingRequest {
+  id           String               @id @default(uuid())
+  learnerId    String
+  mentorId     String
+  skillId      String
+  message      String?
+  proposedAt   DateTime
+  duration     Int // minutes
+  status       BookingRequestStatus @default(PENDING)
+  rejectReason String?
+  sessionId    String?              @unique // set when ACCEPTED → the created Session
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  learner User     @relation("LearnerBookingRequests", fields: [learnerId], references: [id], onDelete: Cascade)
+  mentor  User     @relation("MentorBookingRequests", fields: [mentorId], references: [id], onDelete: Cascade)
+  skill   Skill    @relation(fields: [skillId], references: [id])
+  session Session? @relation(fields: [sessionId], references: [id])
+
+  @@index([mentorId, status])
+  @@index([learnerId, status])
+  @@map("booking_requests")
 }
 
 model Feedback {

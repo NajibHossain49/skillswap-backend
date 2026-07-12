@@ -1,5 +1,10 @@
 import { prisma } from '../../prisma/client';
-import { NotFoundError, ForbiddenError, ValidationError } from '../../utils/errors';
+import {
+  NotFoundError,
+  ForbiddenError,
+  ValidationError,
+  ConflictError,
+} from '../../utils/errors';
 import { logger } from '../../utils/logger';
 import { config } from '../../config';
 import { notificationService } from '../../services/notification.service';
@@ -19,18 +24,55 @@ const SESSION_INCLUDE = {
   feedback: true,
 };
 
+// A Session auto-gets a Jitsi meeting room when it becomes SCHEDULED.
+const jitsiLink = (sessionId: string): string => `https://meet.jit.si/skillswap-${sessionId}`;
+
 export class SessionService {
   async createSession(mentorId: string, dto: CreateSessionDto) {
     const skill = await prisma.skill.findUnique({ where: { id: dto.skillId, isActive: true } });
     if (!skill) throw new NotFoundError('Skill not found');
 
+    const scheduledAt = new Date(dto.scheduledAt);
+    if (await this.hasMentorConflict(mentorId, scheduledAt, dto.duration)) {
+      throw new ConflictError('You already have a session overlapping this time');
+    }
+
     return prisma.session.create({
       data: {
         ...dto,
         mentorId,
-        scheduledAt: new Date(dto.scheduledAt),
+        scheduledAt,
       },
       include: SESSION_INCLUDE,
+    });
+  }
+
+  /**
+   * Returns true if the mentor already has a SCHEDULED or PENDING session whose
+   * time window overlaps [start, start + durationMin).
+   */
+  private async hasMentorConflict(
+    mentorId: string,
+    start: Date,
+    durationMin: number,
+  ): Promise<boolean> {
+    const endMs = start.getTime() + durationMin * 60_000;
+    // Longest allowed session is 480 min, so an 8h look-back covers any overlap.
+    const lookback = new Date(start.getTime() - 8 * 60 * 60 * 1000);
+
+    const candidates = await prisma.session.findMany({
+      where: {
+        mentorId,
+        status: { in: ['SCHEDULED', 'PENDING'] },
+        scheduledAt: { gte: lookback, lt: new Date(endMs) },
+      },
+      select: { scheduledAt: true, duration: true },
+    });
+
+    return candidates.some((s) => {
+      const sStart = s.scheduledAt.getTime();
+      const sEnd = sStart + s.duration * 60_000;
+      return sStart < endMs && start.getTime() < sEnd;
     });
   }
 
@@ -86,15 +128,23 @@ export class SessionService {
   async bookSession(sessionId: string, learnerId: string) {
     const session = await prisma.session.findUnique({ where: { id: sessionId } });
     if (!session) throw new NotFoundError('Session not found');
-    if (session.status !== 'PENDING') throw new ValidationError('Session is not available for booking');
-    if (session.learnerId) throw new ValidationError('Session is already booked');
     if (session.mentorId === learnerId) throw new ValidationError('Mentors cannot book their own sessions');
 
-    const updated = await prisma.session.update({
+    // Atomic guarded write: only one concurrent booking can flip the row from
+    // an available PENDING/unclaimed state to SCHEDULED.
+    const result = await prisma.session.updateMany({
+      where: { id: sessionId, learnerId: null, status: 'PENDING' },
+      data: { learnerId, status: 'SCHEDULED', meetingLink: jitsiLink(sessionId) },
+    });
+    if (result.count === 0) {
+      throw new ConflictError('Session is no longer available');
+    }
+
+    const updated = await prisma.session.findUnique({
       where: { id: sessionId },
-      data: { learnerId, status: 'SCHEDULED' },
       include: SESSION_INCLUDE,
     });
+    if (!updated) throw new NotFoundError('Session not found');
 
     // Notify the mentor — never let this break the booking.
     const link = `${config.appUrl}/sessions/${updated.id}`;
@@ -156,9 +206,15 @@ export class SessionService {
       );
     }
 
+    const nextStatus = dto.status as SessionStatus;
     const updated = await prisma.session.update({
       where: { id: sessionId },
-      data: { status: dto.status as SessionStatus },
+      data: {
+        status: nextStatus,
+        // Auto-provision a meeting room when the session becomes SCHEDULED.
+        ...(nextStatus === 'SCHEDULED' &&
+          !session.meetingLink && { meetingLink: jitsiLink(sessionId) }),
+      },
       include: SESSION_INCLUDE,
     });
 

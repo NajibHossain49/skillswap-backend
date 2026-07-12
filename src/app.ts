@@ -16,6 +16,8 @@ import authRoutes from './modules/auth/auth.routes';
 import userRoutes from './modules/users/user.routes';
 import skillRoutes from './modules/skills/skill.routes';
 import sessionRoutes from './modules/sessions/session.routes';
+import availabilityRoutes from './modules/availability/availability.routes';
+import bookingRoutes from './modules/bookings/booking.routes';
 import notificationRoutes from './modules/notifications/notification.routes';
 import adminRoutes from './modules/admin/admin.routes';
 
@@ -106,6 +108,8 @@ app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/users`, userRoutes);
 app.use(`${API_PREFIX}/skills`, skillRoutes);
 app.use(`${API_PREFIX}/sessions`, sessionRoutes);
+app.use(`${API_PREFIX}/availability`, availabilityRoutes);
+app.use(`${API_PREFIX}/bookings`, bookingRoutes);
 app.use(`${API_PREFIX}/notifications`, notificationRoutes);
 app.use(`${API_PREFIX}/admin`, adminRoutes);
 
