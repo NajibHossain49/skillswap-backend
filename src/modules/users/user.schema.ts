@@ -10,8 +10,11 @@ export const updateUserRoleSchema = z.object({
 });
 
 export const userQuerySchema = z.object({
-  page: z.string().default('1').transform(Number),
-  limit: z.string().default('10').transform(Number),
+  page: z.string().default('1').transform((v) => Math.max(parseInt(v, 10) || 1, 1)),
+  limit: z
+    .string()
+    .default('10')
+    .transform((v) => Math.min(Math.max(parseInt(v, 10) || 10, 1), 100)),
   role: z.enum(['ADMIN', 'MENTOR', 'LEARNER']).optional(),
   search: z.string().optional(),
 });

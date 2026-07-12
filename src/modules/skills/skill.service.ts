@@ -1,7 +1,7 @@
 import { prisma } from '../../prisma/client';
 import { NotFoundError, ForbiddenError } from '../../utils/errors';
 import { CreateSkillDto, UpdateSkillDto, SkillQueryDto } from './skill.schema';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 
 export class SkillService {
   async createSkill(userId: string, dto: CreateSkillDto) {
@@ -12,12 +12,15 @@ export class SkillService {
   }
 
   async getAllSkills(query: SkillQueryDto) {
-    const { page, limit, category, search } = query;
+    const { page, limit, category, search, level, tags, minRating } = query;
     const skip = (page - 1) * limit;
 
-    const where = {
+    const where: Prisma.SkillWhereInput = {
       isActive: true,
       ...(category && { category: { equals: category, mode: 'insensitive' as const } }),
+      ...(level && { level }),
+      ...(tags && tags.length > 0 && { tags: { hasSome: tags } }),
+      ...(minRating !== undefined && { createdBy: { ratingAvg: { gte: minRating } } }),
       ...(search && {
         OR: [
           { title: { contains: search, mode: 'insensitive' as const } },

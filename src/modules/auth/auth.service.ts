@@ -1,4 +1,4 @@
-import { Role, TokenType } from '@prisma/client';
+import { Role, TokenType, CreditTxnType } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../../prisma/client';
@@ -6,6 +6,7 @@ import { config } from '../../config';
 import { logger } from '../../utils/logger';
 import { hashToken, generateSecureToken } from '../../utils/crypto';
 import { sendEmail, verificationEmail, passwordResetEmail } from '../../services/email.service';
+import { creditService } from '../../services/credit.service';
 import { ConflictError, NotFoundError, UnauthorizedError } from '../../utils/errors';
 import {
   generateAccessToken,
@@ -19,6 +20,7 @@ const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000;
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
+const STARTER_CREDITS = 3;
 
 // Precomputed hash compared against when a user does not exist so that login
 // timing is uniform and cannot be used to enumerate which emails are registered.
@@ -119,14 +121,32 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(dto.password, config.bcryptRounds);
 
-    const user = await prisma.user.create({
-      data: {
-        email: dto.email,
-        password: hashedPassword,
-        name: dto.name,
-        bio: dto.bio,
-        role: dto.role as Role,
-      },
+    // Create the account and grant the starter credits through the same atomic
+    // ledger primitive so the balance and the transaction history stay in sync
+    // from the very first credit.
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email: dto.email,
+          password: hashedPassword,
+          name: dto.name,
+          bio: dto.bio,
+          role: dto.role as Role,
+          creditBalance: 0,
+        },
+      });
+
+      await creditService.transfer(
+        {
+          userId: created.id,
+          amount: STARTER_CREDITS,
+          type: CreditTxnType.SIGNUP_BONUS,
+          description: 'Welcome bonus: 3 starter credits',
+        },
+        tx,
+      );
+
+      return created;
     });
 
     const familyId = uuidv4();

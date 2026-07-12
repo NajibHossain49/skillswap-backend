@@ -1,9 +1,10 @@
-import { Prisma, Role, NotificationType, BookingRequestStatus } from '@prisma/client';
+import { Prisma, Role, NotificationType, BookingRequestStatus, CreditTxnType } from '@prisma/client';
 import { prisma } from '../../prisma/client';
 import { NotFoundError, ForbiddenError, ValidationError, ConflictError } from '../../utils/errors';
 import { logger } from '../../utils/logger';
 import { config } from '../../config';
 import { notificationService } from '../../services/notification.service';
+import { creditService } from '../../services/credit.service';
 import { CreateBookingDto, RejectBookingDto, BookingQueryDto } from './booking.schema';
 
 // Max session length (minutes) — bounds how far back we look for overlaps.
@@ -140,12 +141,27 @@ export class BookingService {
   async acceptRequest(id: string, mentorId: string) {
     const request = await prisma.bookingRequest.findUnique({
       where: { id },
-      include: { skill: { select: { title: true } } },
+      include: { skill: { select: { title: true, creditCost: true } } },
     });
     if (!request) throw new NotFoundError('Booking request not found');
     if (request.mentorId !== mentorId) throw new ForbiddenError('Access denied');
     if (request.status !== BookingRequestStatus.PENDING) {
       throw new ValidationError('Only pending requests can be accepted');
+    }
+
+    const creditCost = request.skill.creditCost;
+
+    // Fail fast with a clear 400 if the learner can no longer afford the session
+    // before we spin up a scheduled session for them.
+    const learner = await prisma.user.findUnique({
+      where: { id: request.learnerId },
+      select: { creditBalance: true },
+    });
+    if (!learner) throw new NotFoundError('Learner not found');
+    if (learner.creditBalance < creditCost) {
+      throw new ValidationError(
+        `The learner has insufficient credits for this session (needs ${creditCost}, has ${learner.creditBalance})`,
+      );
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -176,6 +192,18 @@ export class BookingService {
         where: { id: session.id },
         data: { meetingLink: jitsiLink(session.id) },
       });
+
+      // HOLD the learner's credits for the now-scheduled session.
+      await creditService.transfer(
+        {
+          userId: request.learnerId,
+          amount: -creditCost,
+          type: CreditTxnType.SPENT,
+          sessionId: session.id,
+          description: `Booking accepted: "${request.skill.title}"`,
+        },
+        tx,
+      );
 
       return tx.bookingRequest.update({
         where: { id },

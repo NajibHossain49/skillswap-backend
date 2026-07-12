@@ -20,8 +20,11 @@ export const bookSessionSchema = z.object({
 });
 
 export const sessionQuerySchema = z.object({
-  page: z.string().default('1').transform(Number),
-  limit: z.string().default('10').transform(Number),
+  page: z.string().default('1').transform((v) => Math.max(parseInt(v, 10) || 1, 1)),
+  limit: z
+    .string()
+    .default('10')
+    .transform((v) => Math.min(Math.max(parseInt(v, 10) || 10, 1), 100)),
   status: z.enum(['PENDING', 'SCHEDULED', 'COMPLETED', 'CANCELLED']).optional(),
   mentorId: z.string().optional(),
   skillId: z.string().optional(),

@@ -8,6 +8,7 @@ import {
 import { logger } from '../../utils/logger';
 import { config } from '../../config';
 import { notificationService } from '../../services/notification.service';
+import { creditService } from '../../services/credit.service';
 import { sessionBookedEmail, sessionCancelledEmail } from '../../services/email.service';
 import {
   CreateSessionDto,
@@ -15,7 +16,7 @@ import {
   SessionQueryDto,
   CreateFeedbackDto,
 } from './session.schema';
-import { Role, SessionStatus, NotificationType } from '@prisma/client';
+import { Prisma, Role, SessionStatus, NotificationType, CreditTxnType } from '@prisma/client';
 
 const SESSION_INCLUDE = {
   mentor: { select: { id: true, name: true, email: true } },
@@ -125,24 +126,72 @@ export class SessionService {
     return session;
   }
 
+  /**
+   * Net credit impact of a session on the learner (SPENT is negative, REFUND
+   * positive). A still-held booking nets to `-creditCost`; once refunded it
+   * nets back to 0. Used to derive the exact amount to earn out / refund so the
+   * numbers always reconcile against the ledger and stay idempotent.
+   */
+  private async learnerNetForSession(
+    tx: Prisma.TransactionClient,
+    sessionId: string,
+    learnerId: string,
+  ): Promise<number> {
+    const agg = await tx.creditTransaction.aggregate({
+      where: { sessionId, userId: learnerId },
+      _sum: { amount: true },
+    });
+    return agg._sum.amount ?? 0;
+  }
+
   async bookSession(sessionId: string, learnerId: string) {
-    const session = await prisma.session.findUnique({ where: { id: sessionId } });
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      include: { skill: { select: { creditCost: true } } },
+    });
     if (!session) throw new NotFoundError('Session not found');
     if (session.mentorId === learnerId) throw new ValidationError('Mentors cannot book their own sessions');
 
-    // Atomic guarded write: only one concurrent booking can flip the row from
-    // an available PENDING/unclaimed state to SCHEDULED.
-    const result = await prisma.session.updateMany({
-      where: { id: sessionId, learnerId: null, status: 'PENDING' },
-      data: { learnerId, status: 'SCHEDULED', meetingLink: jitsiLink(sessionId) },
+    const creditCost = session.skill.creditCost;
+
+    // Fail fast with a clear 400 before we attempt to claim the slot so the
+    // learner is not told the slot is taken when the real problem is credits.
+    const learner = await prisma.user.findUnique({
+      where: { id: learnerId },
+      select: { creditBalance: true },
     });
-    if (result.count === 0) {
-      throw new ConflictError('Session is no longer available');
+    if (!learner) throw new NotFoundError('User not found');
+    if (learner.creditBalance < creditCost) {
+      throw new ValidationError(
+        `Insufficient credits: this session costs ${creditCost} credit(s) but your balance is ${learner.creditBalance}`,
+      );
     }
 
-    const updated = await prisma.session.findUnique({
-      where: { id: sessionId },
-      include: SESSION_INCLUDE,
+    const updated = await prisma.$transaction(async (tx) => {
+      // Atomic guarded write: only one concurrent booking can flip the row from
+      // an available PENDING/unclaimed state to SCHEDULED.
+      const result = await tx.session.updateMany({
+        where: { id: sessionId, learnerId: null, status: 'PENDING' },
+        data: { learnerId, status: 'SCHEDULED', meetingLink: jitsiLink(sessionId) },
+      });
+      if (result.count === 0) {
+        throw new ConflictError('Session is no longer available');
+      }
+
+      // HOLD the credits. transfer re-reads the balance under a row lock, so a
+      // concurrent spend cannot overdraw the learner despite the pre-check.
+      await creditService.transfer(
+        {
+          userId: learnerId,
+          amount: -creditCost,
+          type: CreditTxnType.SPENT,
+          sessionId,
+          description: `Booked session "${session.title}"`,
+        },
+        tx,
+      );
+
+      return tx.session.findUnique({ where: { id: sessionId }, include: SESSION_INCLUDE });
     });
     if (!updated) throw new NotFoundError('Session not found');
 
@@ -207,15 +256,67 @@ export class SessionService {
     }
 
     const nextStatus = dto.status as SessionStatus;
-    const updated = await prisma.session.update({
-      where: { id: sessionId },
-      data: {
-        status: nextStatus,
-        // Auto-provision a meeting room when the session becomes SCHEDULED.
-        ...(nextStatus === 'SCHEDULED' &&
-          !session.meetingLink && { meetingLink: jitsiLink(sessionId) }),
-      },
-      include: SESSION_INCLUDE,
+
+    // The status flip and every credit movement it triggers must commit together.
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.session.update({
+        where: { id: sessionId },
+        data: {
+          status: nextStatus,
+          // Auto-provision a meeting room when the session becomes SCHEDULED.
+          ...(nextStatus === 'SCHEDULED' &&
+            !session.meetingLink && { meetingLink: jitsiLink(sessionId) }),
+        },
+        include: SESSION_INCLUDE,
+      });
+
+      if (nextStatus === 'COMPLETED') {
+        // Release the held credits to the mentor as earnings, matching the exact
+        // amount the learner was charged, then count the taught session.
+        if (u.learnerId) {
+          const net = await this.learnerNetForSession(tx, sessionId, u.learnerId);
+          const held = Math.max(0, -net);
+          if (held > 0) {
+            await creditService.transfer(
+              {
+                userId: u.mentorId,
+                amount: held,
+                type: CreditTxnType.EARNED,
+                sessionId,
+                description: `Earned for completing "${u.title}"`,
+              },
+              tx,
+            );
+          }
+        }
+        await tx.user.update({
+          where: { id: u.mentorId },
+          data: { totalSessionsTaught: { increment: 1 } },
+        });
+      } else if (nextStatus === 'CANCELLED' && u.learnerId) {
+        // Refund the learner in full when the session is cancelled before it
+        // starts, or whenever the mentor is the one cancelling (no penalty).
+        const cancelledByMentor = u.mentorId === userId;
+        const startsInFuture = u.scheduledAt.getTime() > Date.now();
+        if (cancelledByMentor || startsInFuture) {
+          const net = await this.learnerNetForSession(tx, sessionId, u.learnerId);
+          const refundable = Math.max(0, -net);
+          if (refundable > 0) {
+            await creditService.transfer(
+              {
+                userId: u.learnerId,
+                amount: refundable,
+                type: CreditTxnType.REFUND,
+                sessionId,
+                description: `Refund for cancelled session "${u.title}"`,
+              },
+              tx,
+            );
+          }
+        }
+      }
+
+      return u;
     });
 
     const link = `${config.appUrl}/sessions/${updated.id}`;
@@ -282,9 +383,31 @@ export class SessionService {
     if (session.status !== 'COMPLETED') throw new ValidationError('Session must be completed to leave feedback');
     if (session.feedback) throw new ValidationError('Feedback already submitted for this session');
 
-    const feedback = await prisma.feedback.create({
-      data: { sessionId, learnerId, ...dto },
-      include: { session: { select: { id: true, title: true } } },
+    // Persist the feedback and recompute the mentor's denormalized rating in one
+    // transaction. The average is recomputed from scratch with an aggregate over
+    // every feedback on the mentor's sessions — never a naive incremental mean —
+    // so it stays exact even if feedback is edited or removed later.
+    const feedback = await prisma.$transaction(async (tx) => {
+      const created = await tx.feedback.create({
+        data: { sessionId, learnerId, ...dto },
+        include: { session: { select: { id: true, title: true } } },
+      });
+
+      const agg = await tx.feedback.aggregate({
+        where: { session: { mentorId: session.mentorId } },
+        _avg: { rating: true },
+        _count: { rating: true },
+      });
+
+      await tx.user.update({
+        where: { id: session.mentorId },
+        data: {
+          ratingAvg: agg._avg.rating ?? 0,
+          ratingCount: agg._count.rating,
+        },
+      });
+
+      return created;
     });
 
     // Notify the mentor that feedback was received (in-app only).

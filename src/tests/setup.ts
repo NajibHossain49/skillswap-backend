@@ -11,10 +11,11 @@ process.env.CORS_ORIGIN = '*';
 process.env.PORT = '3001';
 
 // Mock Prisma
-vi.mock('../prisma/client', () => ({
-  prisma: {
+vi.mock('../prisma/client', () => {
+  const prisma: Record<string, any> = {
     user: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -34,12 +35,22 @@ vi.mock('../prisma/client', () => ({
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       count: vi.fn(),
       groupBy: vi.fn(),
     },
     feedback: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
+      count: vi.fn(),
+      aggregate: vi.fn(),
+    },
+    creditTransaction: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      count: vi.fn(),
       aggregate: vi.fn(),
     },
     refreshToken: {
@@ -89,7 +100,17 @@ vi.mock('../prisma/client', () => ({
     $connect: vi.fn(),
     $disconnect: vi.fn(),
     $on: vi.fn(),
-    $queryRaw: vi.fn(),
-    $transaction: vi.fn(),
-  },
-}));
+    // Default row-lock read for credit transfers resolves to a zero balance;
+    // individual tests override this as needed.
+    $queryRaw: vi.fn().mockResolvedValue([{ creditBalance: 0 }]),
+  };
+
+  // Interactive transactions run their callback against the same mock client so
+  // service logic wrapped in `$transaction` executes in tests. An array form
+  // resolves all entries, mirroring Prisma's batch signature.
+  prisma.$transaction = vi.fn((arg: unknown) =>
+    typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : Promise.all(arg as unknown[]),
+  );
+
+  return { prisma };
+});

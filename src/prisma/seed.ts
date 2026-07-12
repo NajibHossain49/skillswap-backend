@@ -214,12 +214,37 @@ async function main() {
     });
   }
 
+  // ── 7. Backfill denormalized mentor stats ────────────────────────────────
+  // ratingAvg / ratingCount mirror what session.addFeedback recomputes, and
+  // totalSessionsTaught reflects completed sessions — so the credit economy and
+  // public mentor discovery endpoints have realistic data out of the box.
+  for (const mentor of mentors) {
+    const [ratingAgg, taught] = await Promise.all([
+      prisma.feedback.aggregate({
+        where: { session: { mentorId: mentor.id } },
+        _avg: { rating: true },
+        _count: { rating: true },
+      }),
+      prisma.session.count({ where: { mentorId: mentor.id, status: SessionStatus.COMPLETED } }),
+    ]);
+
+    await prisma.user.update({
+      where: { id: mentor.id },
+      data: {
+        ratingAvg: ratingAgg._avg.rating ?? 0,
+        ratingCount: ratingAgg._count.rating,
+        totalSessionsTaught: taught,
+      },
+    });
+  }
+
   console.log(`✅ Seeded:
   • ${mentors.length} mentors
   • ${learners.length} learners
   • ${skills.length} skills
   • ${sessionData.length} sessions
-  • feedback for ${completed.length} completed sessions`);
+  • feedback for ${completed.length} completed sessions
+  • backfilled mentor ratings & totalSessionsTaught`);
 
   console.log('\nCredentials (change in production!):');
   console.log('Admin     → admin@skillswap.com / Adm!n-SkillSwap-2026');

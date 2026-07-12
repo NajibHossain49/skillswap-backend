@@ -48,6 +48,20 @@ enum BookingRequestStatus {
   EXPIRED
 }
 
+enum CreditTxnType {
+  SIGNUP_BONUS
+  EARNED
+  SPENT
+  REFUND
+  ADMIN_ADJUSTMENT
+}
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
 model User {
   id                  String    @id @default(uuid())
   email               String    @unique
@@ -63,6 +77,12 @@ model User {
   lastLoginAt         DateTime?
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
+  creditBalance       Int       @default(3) // 3 free starter credits
+  ratingAvg           Float     @default(0) // denormalized, recomputed on new feedback
+  ratingCount         Int       @default(0)
+  totalSessionsTaught Int       @default(0)
+  headline            String? // "Full-stack dev · 5 yrs"
+  location            String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -77,6 +97,7 @@ model User {
   availabilities          Availability[]      @relation("MentorAvailability")
   sentBookingRequests     BookingRequest[]    @relation("LearnerBookingRequests")
   receivedBookingRequests BookingRequest[]    @relation("MentorBookingRequests")
+  creditTransactions      CreditTransaction[]
 
   @@index([email])
   @@index([role, isActive])
@@ -134,19 +155,24 @@ model Notification {
 }
 
 model Skill {
-  id          String   @id @default(uuid())
+  id          String     @id @default(uuid())
   title       String
   description String
   category    String
+  level       SkillLevel @default(BEGINNER)
+  tags        String[]   @default([])
+  creditCost  Int        @default(1)
   createdById String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   createdBy       User             @relation("SkillCreator", fields: [createdById], references: [id])
   sessions        Session[]
   bookingRequests BookingRequest[]
 
+  @@index([category])
+  @@index([createdById])
   @@map("skills")
 }
 
@@ -171,7 +197,27 @@ model Session {
   feedback       Feedback?
   bookingRequest BookingRequest?
 
+  @@index([mentorId, status])
+  @@index([learnerId, status])
+  @@index([skillId])
+  @@index([scheduledAt])
   @@map("sessions")
+}
+
+model CreditTransaction {
+  id           String        @id @default(uuid())
+  userId       String
+  amount       Int // positive = credit, negative = debit
+  balanceAfter Int
+  type         CreditTxnType
+  sessionId    String?
+  description  String
+  createdAt    DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("credit_transactions")
 }
 
 model Availability {
