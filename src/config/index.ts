@@ -12,6 +12,11 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   CORS_ORIGIN: z.string().default('*'),
+  // Upstash Redis (REST) — backs the distributed rate limiter. Optional so local
+  // dev falls back to an in-memory store; required for serverless (Vercel) where
+  // in-memory counters are not shared across invocations.
+  UPSTASH_REDIS_REST_URL: z.string().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
   APP_URL: z.string().default('http://localhost:3001'),
@@ -56,6 +61,10 @@ export const config = {
   },
   cors: {
     origin: parseResult.data.CORS_ORIGIN,
+  },
+  redis: {
+    url: parseResult.data.UPSTASH_REDIS_REST_URL,
+    token: parseResult.data.UPSTASH_REDIS_REST_TOKEN,
   },
   email: {
     resendApiKey: parseResult.data.RESEND_API_KEY,

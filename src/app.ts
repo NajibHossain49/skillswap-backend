@@ -75,11 +75,14 @@ app.use(
 );
 app.use(cors(corsOptions));
 app.use(compression());
-app.use(hpp());
 
 // Body parsing
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// HPP must run AFTER the body parsers so it can sanitize req.body as well as
+// req.query; placed before them it would only guard the query string.
+app.use(hpp());
 
 // Request context + logging
 app.use(requestId);
