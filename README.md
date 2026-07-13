@@ -69,7 +69,7 @@ Parsed and validated at boot in `src/config/index.ts` — an invalid or missing 
 | `UPSTASH_REDIS_REST_TOKEN` | no* | — | Upstash Redis REST token. **Required** in production. |
 | `RESEND_API_KEY` | no | — | Resend key; when unset, emails are logged instead of sent. |
 | `EMAIL_FROM` | no | — | From address for outbound email. |
-| `APP_URL` | no | `http://localhost:3001` | Frontend base URL used in email/notification links. |
+| `APP_URL` | no* | `http://localhost:3001` | Frontend base URL used in email/notification links. **Required** in production — must not be unset or contain `localhost`. |
 | `BCRYPT_ROUNDS` | no | `12` | bcrypt cost factor. |
 | `CRON_SECRET` | no* | — | Shared secret for `POST /api/internal/cron/:job`. **Required** in production. |
 | `ENABLE_CRON` | no | `true` off prod | `true`/`false`. Run in-process node-cron. Automatically disabled on Vercel (`process.env.VERCEL`) and in tests. |
@@ -78,8 +78,9 @@ Parsed and validated at boot in `src/config/index.ts` — an invalid or missing 
 
 \* Optional in development, but **required in production** — `src/config/index.ts` runs a
 startup assertion (only when `NODE_ENV=production`) that refuses to boot if `CORS_ORIGIN`
-is unset/`*`/localhost, `CRON_SECRET` is missing, the Upstash rate-limit vars are missing,
-or `DATABASE_URL` is not the pooled (`-pooler`) endpoint.
+is unset/`*`/localhost, `APP_URL` is unset or contains localhost, `CRON_SECRET` is missing,
+the Upstash rate-limit vars are missing, or `DATABASE_URL` is not the pooled (`-pooler`)
+endpoint.
 
 ---
 

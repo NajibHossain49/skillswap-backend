@@ -56,7 +56,9 @@ export const config = {
   port: parseInt(parseResult.data.PORT, 10),
   database: {
     url: parseResult.data.DATABASE_URL,
-    directUrl: parseResult.data.DIRECT_URL,
+    // Migrations use the direct (non-pooled) endpoint; locally there is usually
+    // no separate host, so fall back to DATABASE_URL when DIRECT_URL is unset.
+    directUrl: parseResult.data.DIRECT_URL ?? parseResult.data.DATABASE_URL,
   },
   jwt: {
     accessSecret: parseResult.data.JWT_ACCESS_SECRET,
@@ -111,6 +113,17 @@ function assertProductionConfig(): void {
     errors.push(
       `CORS_ORIGIN still contains "localhost" (got "${corsOrigin}"). Set it to the ` +
         'deployed frontend origin(s) instead.',
+    );
+  }
+
+  // APP_URL is embedded in verification/reset/notification email links. A missing
+  // or localhost value ships dead links to real users. It defaults to a localhost
+  // URL, so an unset value trips the localhost check below.
+  const appUrl = config.appUrl?.trim();
+  if (!appUrl || /localhost/i.test(appUrl)) {
+    errors.push(
+      `APP_URL must be your deployed frontend URL in production (got "${appUrl || '(unset)'}"). ` +
+        'It builds the links in verification, password-reset, and notification emails.',
     );
   }
 
