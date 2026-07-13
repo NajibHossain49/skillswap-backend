@@ -1,14 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "version": 2,
-  "builds": [{ "src": "api/index.ts", "use": "@vercel/node" }],
-  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "buildCommand": "prisma generate && prisma migrate deploy && tsc",
+  "outputDirectory": "public",
   "functions": {
     "api/index.ts": {
       "maxDuration": 30,
       "memory": 1024
     }
   },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api" }
+  ],
   "crons": [
     { "path": "/api/internal/cron/cleanupExpiredTokens", "schedule": "0 3 * * *" },
     { "path": "/api/internal/cron/autoCompleteSessions", "schedule": "0 4 * * *" }
