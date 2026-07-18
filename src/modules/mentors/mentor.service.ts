@@ -107,7 +107,9 @@ export class MentorService {
     ]);
 
     return {
-      mentors,
+      // Expose the relation as `skills` publicly; `createdSkills` is an internal
+      // Prisma relation name and must not leak into the public API contract.
+      mentors: mentors.map(({ createdSkills, ...mentor }) => ({ ...mentor, skills: createdSkills })),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -115,7 +117,7 @@ export class MentorService {
   async getMentorById(mentorId: string) {
     const mentor = await prisma.user.findFirst({
       where: { id: mentorId, role: Role.MENTOR, isActive: true, deletedAt: null },
-      select: MENTOR_PUBLIC_SELECT,
+      select: { ...MENTOR_PUBLIC_SELECT, createdAt: true },
     });
     if (!mentor) throw new NotFoundError('Mentor not found');
 
@@ -126,7 +128,8 @@ export class MentorService {
       take: 5,
     });
 
-    return { ...mentor, recentReviews };
+    const { createdSkills, ...rest } = mentor;
+    return { ...rest, skills: createdSkills, recentReviews };
   }
 
   async getMentorReviews(mentorId: string, query: MentorReviewsQueryDto) {

@@ -76,6 +76,22 @@ const ok = (description: string) => ({
   content: { 'application/json': { schema: ApiResponse } },
 });
 
+// The standard envelope with a typed `data` payload, for routes whose response
+// shape we want the spec to describe precisely.
+const okData = (description: string, data: ZodAny) => ({
+  description,
+  content: {
+    'application/json': {
+      schema: z.object({
+        success: z.boolean(),
+        message: z.string(),
+        data,
+        errors: z.unknown().optional(),
+      }),
+    },
+  },
+});
+
 const errorResponses = {
   400: { description: 'Validation error' },
   401: { description: 'Unauthorized' },
@@ -137,8 +153,64 @@ registry.registerPath({ method: 'patch', path: '/api/bookings/{id}/reject', tags
 registry.registerPath({ method: 'patch', path: '/api/bookings/{id}/cancel', tags: ['Bookings'], summary: 'Cancel request (LEARNER)', security: bearer, request: { params: z.object({ id: idParam }) }, responses: { 200: ok('Cancelled'), ...errorResponses } });
 
 // ─────────────────────────── Mentors ───────────────────────────
-registry.registerPath({ method: 'get', path: '/api/mentors', tags: ['Mentors'], summary: 'Public mentor discovery', request: { query: paginationQuery }, responses: { 200: ok('Mentors') } });
-registry.registerPath({ method: 'get', path: '/api/mentors/{id}', tags: ['Mentors'], summary: 'Public mentor profile', request: { params: z.object({ id: idParam }) }, responses: { 200: ok('Mentor'), ...errorResponses } });
+// Public mentor projections. These deliberately expose the relation as `skills`
+// (never the internal `createdSkills`) and never include email or password.
+const MentorSkill = z.object({
+  id: z.string(),
+  title: z.string(),
+  category: z.string(),
+  level: z.string(),
+});
+
+const MentorPublic = registry.register(
+  'MentorPublic',
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    avatarUrl: z.string().nullable(),
+    headline: z.string().nullable(),
+    bio: z.string().nullable(),
+    location: z.string().nullable(),
+    ratingAvg: z.number(),
+    ratingCount: z.number(),
+    totalSessionsTaught: z.number(),
+    skills: z.array(MentorSkill),
+  }),
+);
+
+const MentorReview = z.object({
+  id: z.string(),
+  rating: z.number(),
+  comment: z.string().nullable(),
+  createdAt: z.string(),
+  learner: z.object({ id: z.string(), name: z.string(), avatarUrl: z.string().nullable() }),
+  session: z.object({
+    id: z.string(),
+    title: z.string(),
+    skill: z.object({ id: z.string(), title: z.string() }).nullable(),
+  }),
+});
+
+const MentorDetail = registry.register(
+  'MentorDetail',
+  MentorPublic.extend({
+    createdAt: z.string(),
+    recentReviews: z.array(MentorReview),
+  }),
+);
+
+const MentorList = z.object({
+  mentors: z.array(MentorPublic),
+  pagination: z.object({
+    page: z.number(),
+    limit: z.number(),
+    total: z.number(),
+    totalPages: z.number(),
+  }),
+});
+
+registry.registerPath({ method: 'get', path: '/api/mentors', tags: ['Mentors'], summary: 'Public mentor discovery', request: { query: paginationQuery }, responses: { 200: okData('Mentors', MentorList) } });
+registry.registerPath({ method: 'get', path: '/api/mentors/{id}', tags: ['Mentors'], summary: 'Public mentor profile', request: { params: z.object({ id: idParam }) }, responses: { 200: okData('Mentor', MentorDetail), ...errorResponses } });
 registry.registerPath({ method: 'post', path: '/api/mentors/apply', tags: ['Mentors'], summary: 'Apply to become a mentor', security: bearer, request: { body: jsonBody(components.ApplyMentorInput) }, responses: { 200: ok('Application submitted'), ...errorResponses } });
 
 // ─────────────────────────── Credits ───────────────────────────
